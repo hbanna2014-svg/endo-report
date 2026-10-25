@@ -4,6 +4,20 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.1 — 2026-10-25
+
+**Fix: an existing data folder could not be opened ("column identity_no does not exist").**
+
+The base schema created the `patients(identity_no)` index *before* the migrations that add
+that column, so any database written by an earlier release aborted on startup with
+`column "identity_no" does not exist`. Indexes are now created after migrations run.
+
+- Existing records were never at risk: the pre-upgrade copy is taken before the database opens.
+- Verified end to end: a database shaped like an older release (new columns removed, schema
+  version rewound to 1) opens, migrates through v2 → v3 → v4, keeps its records, and accepts
+  edits that use the new fields. `npm run test:legacy` reproduces the exact scenario.
+- The packaged build was then booted against such a database and reached the dashboard.
+
 ## 0.5.0 — 2026-10-25
 
 **Theme: the sheet matches the paper form exactly, and the doctor's seal is one click away.**

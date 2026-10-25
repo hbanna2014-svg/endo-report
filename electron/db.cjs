@@ -157,9 +157,18 @@ CREATE TABLE IF NOT EXISTS settings (
   value JSONB NOT NULL
 );
 
+`
+
+/**
+ * Indexes are created *after* migrations, never before. An index on a column
+ * that a migration is about to add would abort startup on an older database
+ * (which is exactly what happened to the first 0.5 build).
+ */
+const INDEXES = `
 CREATE INDEX IF NOT EXISTS idx_procedures_patient ON procedures(patient_id);
 CREATE INDEX IF NOT EXISTS idx_procedures_date ON procedures(procedure_date);
 CREATE INDEX IF NOT EXISTS idx_media_procedure ON media(procedure_id);
+CREATE INDEX IF NOT EXISTS idx_media_taken ON media(taken_at);
 CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(name);
 CREATE INDEX IF NOT EXISTS idx_patients_identity ON patients(identity_no);
 `
@@ -248,7 +257,9 @@ async function init(dir) {
     const PGlite = await loadPglite()
     db = await PGlite.create({ dataDir: path.join(dataDir, 'db') })
     await db.exec(SCHEMA)
+    // Migrations must run first: they may add the very columns the indexes sit on.
     await migrate()
+    await db.exec(INDEXES)
     // Seed settings on first run.
     const existing = await db.query(`SELECT key FROM settings WHERE key = 'clinic'`)
     if (!existing.rows.length) {
@@ -835,4 +846,6 @@ module.exports = {
   getLastMigration: () => lastMigration,
   SCHEMA_VERSION,
   MIGRATIONS,
+  SCHEMA,
+  INDEXES,
 }

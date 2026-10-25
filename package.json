@@ -1,7 +1,7 @@
 {
   "name": "endoreport",
   "productName": "EndoReport",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Offline Endoscopy & Colonoscopy Reporting Software for Windows",
   "author": "EndoReport",
   "license": "UNLICENSED",
@@ -20,7 +20,8 @@
     "dist:linux": "npm run build && electron-builder --linux --x64",
     "release:win": "npm run build && electron-builder --win --x64 --publish always",
     "checksums": "node scripts/checksums.mjs release",
-    "preview:hospital": "node scripts/hospital-preview.mjs"
+    "preview:hospital": "node scripts/hospital-preview.mjs",
+    "test:legacy": "node scripts/legacy-db-test.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.17",
