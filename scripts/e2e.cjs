@@ -164,6 +164,13 @@ async function run() {
   })()
   check('Word package contains document.xml', extracted && hasDocXml)
 
+  console.log('\n--- 5b. Opening a Word report back into the editor ---')
+  const { convertDocxBuffer } = require('../electron/docxToHtml.cjs')
+  const converted = await convertDocxBuffer(fs.readFileSync(docxPath))
+  check('Word file converts back to editable HTML', !!(converted && converted.html && converted.html.length > 50))
+  check('the converted report keeps the patient name', String(converted.html).includes('E2E Test Patient'))
+  check('the converted report keeps the findings text', /Impression|FINDINGS|Findings/i.test(String(converted.html)))
+
   console.log('\n--- 6. Doctors, templates and settings ---')
   const doc = await db.saveDoctor({ name: 'Dr. Test Endoscopist', designation: 'Consultant', role: 'endoscopist' })
   check('doctor saved', !!doc.id && (await db.listDoctors()).length === 1)
