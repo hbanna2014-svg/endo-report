@@ -1218,3 +1218,20 @@ a { color: var(--brand); }
   font-size: 12.5px; font-weight: 600;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+
+/* --- dashboard shell: analytics on the left, the day's patients on the right */
+.dash-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.dash-body.with-stats {
+  grid-template-columns: minmax(0, 460px) minmax(0, 1fr);
+}
+.dash-left { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.dash-main { min-width: 0; }
+.dash-left .day-breakdown { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1240px) {
+  .dash-body.with-stats { grid-template-columns: 1fr; }
+}

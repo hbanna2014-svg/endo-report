@@ -4,6 +4,18 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.6 — 2026-10-26
+
+### Dashboard
+
+- The dashboard now opens on **the day's patient list** — date picker, count, and every patient
+  with name, age/sex, registration, procedure, doctor and status; a row opens the report.
+- A new **Last 30 days** button in the header reveals the workload card **on the left**: the
+  Endoscopy / Colonoscopy / Both / Polypectomy / Biopsy / Total tiles, the 30-day chart and the
+  last-7-days list.
+- The consultant panel sits under the workload card while that panel is open, and below the day
+  list when it is closed.
+
 ## 0.5.5 — 2026-10-26
 
 ### Dashboard

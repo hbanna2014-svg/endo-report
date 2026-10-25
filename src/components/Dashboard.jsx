@@ -17,6 +17,8 @@ import {
   Users,
   TrendingUp,
   ArrowRight,
+  BarChart3,
+  CalendarDays,
 } from 'lucide-react'
 
 import { api } from '../lib/api.js'
@@ -127,15 +129,14 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
   const [consultant, setConsultant] = useState('')
   const [consultPros, setConsultPros] = useState([])
   const [consultLoading, setConsultLoading] = useState(false)
+  const [showStats, setShowStats] = useState(false)
+  const [dayPatients, setDayPatients] = useState([])
+  const [dayLoading, setDayLoading] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [list, counts] = await Promise.all([
-        api.procedures.list({ limit: 8 }),
-        api.data.counts(30),
-      ])
-      setRecent(list || [])
+      const counts = await api.data.counts(30)
       setRows(counts?.daily || [])
       setConsultants(counts?.consultants || [])
     } catch (err) {
@@ -144,6 +145,26 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
       setLoading(false)
     }
   }, [toast])
+
+  /** The patients booked / examined on the chosen date. */
+  useEffect(() => {
+    let cancelled = false
+    setDayLoading(true)
+    api.procedures
+      .list({ from: selectedDate, to: selectedDate, limit: 300 })
+      .then((list) => {
+        if (!cancelled) setDayPatients(list || [])
+      })
+      .catch(() => {
+        if (!cancelled) setDayPatients([])
+      })
+      .finally(() => {
+        if (!cancelled) setDayLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedDate])
 
   /** Everything the chosen consultant has performed. */
   useEffect(() => {
@@ -173,6 +194,12 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
 
   const empty = !stats || (stats.patients === 0 && stats.procedures === 0)
 
+  const prettyDate = (iso) => {
+    const d = new Date(`${iso}T00:00:00`)
+    if (Number.isNaN(d.getTime())) return iso
+    return d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
+  }
+
   const dayKeyOf = (r) => String(r.day || '').slice(0, 10)
   const dayRow =
     rows.find((r) => dayKeyOf(r) === selectedDate) || {
@@ -184,12 +211,83 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
     String(c.doctor || '').toLowerCase().includes(consultQuery.trim().toLowerCase()),
   )
 
+  const consultantCard = (
+            <Card
+              title="Consultant"
+              subtitle="Search a name and tick it to see all their procedures"
+              actions={
+                consultant ? (
+                  <Button size="sm" onClick={() => setConsultant('')}>
+                    Clear
+                  </Button>
+                ) : null
+              }
+            >
+              <Input
+                value={consultQuery}
+                onChange={(e) => setConsultQuery(e.target.value)}
+                placeholder="Search consultant…"
+              />
+              <div className="consult-list">
+                {filteredConsultants.length ? (
+                  filteredConsultants.map((c) => {
+                    const on = consultant === c.doctor
+                    return (
+                      <label key={c.doctor} className={`consult-item${on ? ' on' : ''}`}>
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => setConsultant(on ? '' : c.doctor)}
+                        />
+                        <span className="nm">{c.doctor}</span>
+                        <span className="ct">{c.total}</span>
+                      </label>
+                    )
+                  })
+                ) : (
+                  <div className="small muted" style={{ padding: '10px 2px' }}>
+                    {consultants.length ? 'No consultant matches that search.' : 'No procedures recorded yet.'}
+                  </div>
+                )}
+              </div>
+
+              {consultant ? (
+                <div className="consult-results">
+                  <div className="consult-head">
+                    {consultant}
+                    <span>{consultLoading ? 'loading…' : `${consultPros.length} procedure(s)`}</span>
+                  </div>
+                  {consultPros.slice(0, 60).map((p) => (
+                    <button key={p.id} className="consult-row" onClick={() => onOpenProcedure(p.id, p.patientId)}>
+                      <span className="d">{(p.procedureDate || '').slice(0, 10) || '—'}</span>
+                      <span className="n">{p.patientName}</span>
+                      <ProcedureChip testName={p.testName} />
+                    </button>
+                  ))}
+                  {!consultPros.length && !consultLoading ? (
+                    <div className="small muted" style={{ padding: 8 }}>
+                      Nothing recorded for this consultant yet.
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </Card>
+  )
+
   return (
     <>
       <Topbar
         title="Dashboard"
         crumb={`${clinic?.name || 'Clinic'} · ${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`}
       >
+        <Button
+          icon={BarChart3}
+          size="sm"
+          variant={showStats ? 'primary' : 'default'}
+          onClick={() => setShowStats((v) => !v)}
+        >
+          Last 30 days
+        </Button>
         <Button icon={RefreshCw} size="sm" onClick={() => { load(); onRefresh?.() }} disabled={loading}>
           Refresh
         </Button>
@@ -237,169 +335,124 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
           <Stat label="Videos" value={stats?.videos ?? 0} detail="Recorded clips" tone="violet" />
         </div>
 
-        <div className="dash-split" style={{ marginTop: 16 }}>
-          <Card
-            title="Procedures in the last 30 days"
-            subtitle="Pick a date to see exactly what was done"
-            actions={
-              <input
-                type="date"
-                className="dash-date"
-                value={selectedDate}
-                max={todayKey}
-                onChange={(e) => setSelectedDate(e.target.value)}
-              />
-            }
-          >
-            <DayBreakdown row={dayRow} />
-            {rows.length ? (
-              <MiniChart daily={rows} selected={selectedDate} onSelect={setSelectedDate} />
-            ) : (
-              <div className="small muted">No procedures recorded in this period.</div>
-            )}
-            <div className="day-list">
-              <div className="day-list-head">
-                <span>Last 7 days</span>
-                <span>Total</span>
-              </div>
-              {lastSeven.map((r) => (
-                <button
-                  key={r.day}
-                  className={`day-row${selectedDate === r.day ? ' on' : ''}`}
-                  onClick={() => setSelectedDate(r.day)}
-                >
-                  <span className="d">{r.day}</span>
-                  <span className="mini">
-                    <i style={{ width: `${Math.max(4, (r.total / maxTotal) * 100)}%` }} />
-                  </span>
-                  <span className="t">{r.total}</span>
-                </button>
-              ))}
-            </div>
-          </Card>
-
-          <Card
-            title="Consultant"
-            subtitle="Search a name and tick it to see all their procedures"
-            actions={
-              consultant ? (
-                <Button size="sm" onClick={() => setConsultant('')}>
-                  Clear
-                </Button>
-              ) : null
-            }
-          >
-            <Input
-              value={consultQuery}
-              onChange={(e) => setConsultQuery(e.target.value)}
-              placeholder="Search consultant…"
-            />
-            <div className="consult-list">
-              {filteredConsultants.length ? (
-                filteredConsultants.map((c) => {
-                  const on = consultant === c.doctor
-                  return (
-                    <label key={c.doctor} className={`consult-item${on ? ' on' : ''}`}>
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={() => setConsultant(on ? '' : c.doctor)}
-                      />
-                      <span className="nm">{c.doctor}</span>
-                      <span className="ct">{c.total}</span>
-                    </label>
-                  )
-                })
-              ) : (
-                <div className="small muted" style={{ padding: '10px 2px' }}>
-                  {consultants.length ? 'No consultant matches that search.' : 'No procedures recorded yet.'}
-                </div>
-              )}
-            </div>
-
-            {consultant ? (
-              <div className="consult-results">
-                <div className="consult-head">
-                  {consultant}
-                  <span>{consultLoading ? 'loading…' : `${consultPros.length} procedure(s)`}</span>
-                </div>
-                {consultPros.slice(0, 60).map((p) => (
-                  <button key={p.id} className="consult-row" onClick={() => onOpenProcedure(p.id)}>
-                    <span className="d">{(p.procedureDate || '').slice(0, 10) || '—'}</span>
-                    <span className="n">{p.patientName}</span>
-                    <ProcedureChip type={p.testName} />
-                  </button>
-                ))}
-                {!consultPros.length && !consultLoading ? (
-                  <div className="small muted" style={{ padding: 8 }}>
-                    Nothing recorded for this consultant yet.
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </Card>
-        </div>
-
-        <div style={{ marginTop: 16 }}>
-          <Card
-            title="Recent reports"
-            subtitle={loading ? 'Loading…' : `${recent.length} shown`}
-            actions={
-              <Button size="sm" variant="ghost" icon={ArrowRight} onClick={() => onNavigate('procedures')}>
-                View all
-              </Button>
-            }
-            bodyClass="tight"
-          >
-            {recent.length ? (
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Patient</th>
-                    <th>Procedure</th>
-                    <th>Date</th>
-                    <th>Status</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {recent.map((p) => (
-                    <tr key={p.id} onClick={() => onOpenProcedure(p.id, p.patientId)}>
-                      <td>
-                        <div className="name">{p.patientName}</div>
-                        <div className="sub">
-                          {[p.patientAge && `${p.patientAge} y`, p.patientSex, p.patientReg].filter(Boolean).join(' · ')}
-                        </div>
-                      </td>
-                      <td>
-                        <ProcedureChip testName={p.testName} />
-                      </td>
-                      <td className="small">{p.procedureDate || '—'}</td>
-                      <td>
-                        <Chip tone={p.reportStatus === 'final' ? 'ok' : 'warn'}>
-                          {p.reportStatus === 'final' ? 'Final' : 'Draft'}
-                        </Chip>
-                      </td>
-                      <td className="small muted nowrap">
-                        <ArrowRight size={14} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <Empty
-                icon={ImageIcon}
-                title="No reports yet"
-                hint="Register a patient to create your first endoscopy report."
-                action={
-                  <Button variant="primary" icon={UserPlus} onClick={() => onNavigate('patients')}>
-                    New patient
-                  </Button>
+        <div className={`dash-body${showStats ? ' with-stats' : ''}`} style={{ marginTop: 16 }}>
+          {showStats ? (
+          <aside className="dash-left">
+            {showStats ? (
+              <Card
+                title="Procedures in the last 30 days"
+                subtitle="Pick a date to see exactly what was done"
+                actions={
+                  <input
+                    type="date"
+                    className="dash-date"
+                    value={selectedDate}
+                    max={todayKey}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                  />
                 }
-              />
-            )}
-          </Card>
+              >
+                <DayBreakdown row={dayRow} />
+                {rows.length ? (
+                  <MiniChart daily={rows} selected={selectedDate} onSelect={setSelectedDate} />
+                ) : (
+                  <div className="small muted">No procedures recorded in this period.</div>
+                )}
+                <div className="day-list">
+                  <div className="day-list-head">
+                    <span>Last 7 days</span>
+                    <span>Total</span>
+                  </div>
+                  {lastSeven.map((r) => (
+                    <button
+                      key={r.day}
+                      className={`day-row${selectedDate === r.day ? ' on' : ''}`}
+                      onClick={() => setSelectedDate(r.day)}
+                    >
+                      <span className="d">{r.day}</span>
+                      <span className="mini">
+                        <i style={{ width: `${Math.max(4, (r.total / maxTotal) * 100)}%` }} />
+                      </span>
+                      <span className="t">{r.total}</span>
+                    </button>
+                  ))}
+                </div>
+              </Card>
+            ) : null}
+
+            {consultantCard}
+          </aside>
+          ) : null}
+
+          <section className="dash-main">
+            <Card
+              title={`Patients — ${prettyDate(selectedDate)}`}
+              subtitle={dayLoading ? 'Loading…' : `${dayPatients.length} patient(s) on this date`}
+              actions={
+                <input
+                  type="date"
+                  className="dash-date"
+                  value={selectedDate}
+                  max={todayKey}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                />
+              }
+              bodyClass="tight"
+            >
+              {dayPatients.length ? (
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Patient</th>
+                      <th>Procedure</th>
+                      <th>Doctor</th>
+                      <th>Status</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dayPatients.map((p) => (
+                      <tr key={p.id} onClick={() => onOpenProcedure(p.id, p.patientId)}>
+                        <td>
+                          <div className="name">{p.patientName}</div>
+                          <div className="sub">
+                            {[p.patientAge && `${p.patientAge} y`, p.patientSex, p.patientReg]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </div>
+                        </td>
+                        <td>
+                          <ProcedureChip testName={p.testName} />
+                        </td>
+                        <td className="small">{p.performingDoctor || '—'}</td>
+                        <td>
+                          <Chip tone={p.reportStatus === 'final' ? 'ok' : 'warn'}>
+                            {p.reportStatus === 'final' ? 'Final' : 'Draft'}
+                          </Chip>
+                        </td>
+                        <td className="small muted nowrap">
+                          <ArrowRight size={14} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <Empty
+                  icon={CalendarDays}
+                  title="No patients on this date"
+                  hint="Pick another date, or register a patient to start a report."
+                  action={
+                    <Button variant="primary" icon={UserPlus} onClick={() => onNavigate('patients')}>
+                      New patient
+                    </Button>
+                  }
+                />
+              )}
+            </Card>
+          </section>
+
+          {showStats ? null : consultantCard}
         </div>
 
         <div className="grid c3" style={{ marginTop: 16 }}>
