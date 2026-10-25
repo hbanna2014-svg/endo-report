@@ -35,9 +35,14 @@ app
     // Let webfonts and the embedded base64 images settle.
     await new Promise((r) => setTimeout(r, 1400))
 
-    const image = await win.webContents.capturePage()
     fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true })
-    fs.writeFileSync(path.resolve(output), image.toPNG())
+    if (String(output).toLowerCase().endsWith('.pdf')) {
+      const pdf = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' })
+      fs.writeFileSync(path.resolve(output), pdf)
+    } else {
+      const image = await win.webContents.capturePage()
+      fs.writeFileSync(path.resolve(output), image.toPNG())
+    }
     console.log(`[render] ${output} (${fs.statSync(path.resolve(output)).size} bytes)`)
     app.exit(0)
   })

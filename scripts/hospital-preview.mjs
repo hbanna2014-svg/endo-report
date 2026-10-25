@@ -156,6 +156,18 @@ const model = buildReportModel(patient, { ...procedure, media }, template)
 const outDir = path.resolve('preview')
 fs.mkdirSync(outDir, { recursive: true })
 
+// A second pass that mirrors the application: the model is built from the
+// database (filePath only), and the pictures are hydrated just before printing.
+for (const m of media) {
+  if (m.kind === 'image') {
+    fs.writeFileSync(path.join(outDir, `pic-${m.id}.png`), Buffer.from(m.dataUrl.split(',')[1], 'base64'))
+  }
+}
+const dryMedia = media.map((m) => (m.kind === 'image' ? { ...m, dataUrl: undefined, filePath: path.join(outDir, `pic-${m.id}.png`) } : m))
+const dryModel = buildReportModel(patient, { ...procedure, media: dryMedia }, template)
+const hydrated = dryMedia.map((m) => (m.kind === 'image' ? { ...m, dataUrl: `data:image/png;base64,${fs.readFileSync(m.filePath).toString('base64')}` } : m))
+fs.writeFileSync(path.join(outDir, 'hospital-dry.html'), buildPrintHtml({ ...dryModel, media: hydrated }), 'utf8')
+
 const html = buildPrintHtml(model)
 fs.writeFileSync(path.join(outDir, 'hospital.html'), html, 'utf8')
 

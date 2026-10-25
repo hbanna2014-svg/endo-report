@@ -4,6 +4,30 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.2 — 2026-10-25
+
+### Fixed
+
+- **Pictures were missing from Print and Save PDF.** The report model copied each picture slot
+  before the image data was read from disk, so the printer received slots with no image and
+  printed "No Preview Available". Slots are now resolved against the hydrated media at print
+  time. Verified by printing the report to PDF and counting the embedded images: 7 of 7.
+- **"memory access out of bounds" when saving a patient.** PGlite is a single-threaded WASM
+  build of PostgreSQL; concurrent statements from different IPC handlers could exhaust its
+  memory. All statements now run through one queue, with a single retry for a transient WASM
+  fault.
+
+### Added
+
+- **Patient Archive** replaces the plain Patients list (navigation and page title), with edit,
+  new report and delete on every row and the full report history in the detail panel.
+- **Register a new patient** rebuilt to the unit's own layout: name, MRN, hospital identity,
+  visit/file no., visit date, age, sex, **bed**, **procedure**, referrer, doctor, assistant,
+  phone, address, town, district, post code, indication, history, allergy, medication, notes.
+- **Save & open capture** — registers the patient, creates the procedure with the chosen test
+  and lands directly in the live console.
+- Address parts (town, district, post code) on the patient record — schema v5.
+
 ## 0.5.1 — 2026-10-25
 
 **Fix: an existing data folder could not be opened ("column identity_no does not exist").**

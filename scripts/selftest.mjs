@@ -470,5 +470,18 @@ check('hospital Word document is a valid OOXML zip', hMagic === 'PK')
 fs.unlinkSync(hTmp)
 
 /* ========================================================================== */
+console.log('\n=== 12. Pictures reach the printed page ===\n')
+
+// The report model is built before the pictures are read from disk; the print
+// path hydrates them afterwards. The printer must still find them.
+const dryMedia = [{ id: 'pic-a', kind: 'image', no: 1, caption: 'Lower oesophagus', filePath: '/tmp/a.png' }]
+const dryProcedure = { ...hospitalProcedure, media: dryMedia, imageLayout: 'form7' }
+const dryModel = buildReportModel(hospitalPatient, dryProcedure, hospitalTemplate)
+const hydrated = [{ ...dryMedia[0], dataUrl: 'data:image/png;base64,ZZZHYDRATED' }]
+const dryHtml = buildPrintHtml({ ...dryModel, media: hydrated })
+check('print finds a picture hydrated after the model was built', dryHtml.includes('ZZZHYDRATED'))
+check('no empty slot is left behind for that picture', !dryHtml.includes('No Preview Available'))
+
+/* ========================================================================== */
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}\n`)
 process.exit(failures === 0 ? 0 : 1)

@@ -15,7 +15,7 @@ const crypto = require('node:crypto')
  * Bump this whenever the schema changes and add a matching entry to MIGRATIONS.
  * Existing clinics are upgraded in place; their data is never recreated.
  */
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 5
 
 /**
  * Ordered, idempotent schema migrations. Each entry moves a database from
@@ -57,6 +57,15 @@ const MIGRATIONS = [
       await db.exec(`ALTER TABLE doctors ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT false`)
     },
   },
+  {
+    to: 5,
+    name: 'address parts on the patient record (town, state, post code)',
+    up: async (db) => {
+      await db.exec(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS town TEXT`)
+      await db.exec(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS state TEXT`)
+      await db.exec(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS post_code TEXT`)
+    },
+  },
 ]
 
 let PGliteCtor = null
@@ -89,6 +98,9 @@ CREATE TABLE IF NOT EXISTS patients (
   sex TEXT,
   phone TEXT,
   address TEXT,
+  town TEXT,
+  state TEXT,
+  post_code TEXT,
   referred_by TEXT,
   performing_doctor TEXT,
   assistant TEXT,
@@ -291,8 +303,39 @@ function requireDb() {
   return db
 }
 
+/**
+ * PGlite is a single-threaded WASM build of PostgreSQL. Firing several queries
+ * at once from different IPC handlers can exhaust or corrupt its linear memory
+ * ("memory access out of bounds"), so every statement goes through one queue.
+ */
+let queue = Promise.resolve()
+
+function serialise(run) {
+  const next = queue.then(run, run)
+  // Keep the chain alive even when a statement rejects.
+  queue = next.then(
+    () => undefined,
+    () => undefined,
+  )
+  return next
+}
+
+const TRANSIENT_WASM = /memory access out of bounds|out of bounds memory access|RuntimeError/i
+
+async function withRetry(run) {
+  try {
+    return await serialise(run)
+  } catch (err) {
+    if (!TRANSIENT_WASM.test(String(err && err.message))) throw err
+    // One retry on the same connection usually succeeds once the previous
+    // statement has fully unwound.
+    await new Promise((r) => setTimeout(r, 120))
+    return serialise(run)
+  }
+}
+
 async function q(sql, params = []) {
-  const res = await requireDb().query(sql, params)
+  const res = await withRetry(() => requireDb().query(sql, params))
   return res.rows
 }
 
@@ -313,6 +356,9 @@ function rowToPatient(r) {
     sex: r.sex,
     phone: r.phone,
     address: r.address,
+    town: r.town,
+    state: r.state,
+    postCode: r.post_code,
     referredBy: r.referred_by,
     performingDoctor: r.performing_doctor,
     assistant: r.assistant,
@@ -346,6 +392,9 @@ const PATIENT_COLUMNS = [
   ['sex', 'sex'],
   ['phone', 'phone'],
   ['address', 'address'],
+  ['town', 'town'],
+  ['state', 'state'],
+  ['post_code', 'postCode'],
   ['referred_by', 'referredBy'],
   ['performing_doctor', 'performingDoctor'],
   ['assistant', 'assistant'],

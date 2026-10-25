@@ -352,6 +352,14 @@ export function buildDocPrintHtml(model) {
 export function buildHospitalPrintHtml(model) {
   const f = model.hospital
   if (!f) return ''
+
+  // Pictures are hydrated with data URLs only at print time, so resolve every
+  // slot against the media list that came with the model instead of trusting
+  // the copy made when the report was built.
+  const mediaById = new Map((model.media || []).map((m) => [m.id, m]))
+  const pick = (slot) => (slot && slot.id && mediaById.has(slot.id) ? { ...slot, ...mediaById.get(slot.id) } : slot)
+  const topFigures = (f.top || []).map(pick)
+  const sideFigures = (f.side || []).map(pick)
   const layout = model.template.layout || {}
   const font = layout.fontFamily || 'Arial'
 
@@ -505,7 +513,7 @@ export function buildHospitalPrintHtml(model) {
       ${header}
       <div class="band"><h1>${esc(f.title)}</h1></div>
 
-      <div class="top3">${f.top.map((m) => figure(m)).join('')}</div>
+      <div class="top3">${topFigures.map((m) => figure(m)).join('')}</div>
 
       <div class="cols">
         <div class="col-left">
@@ -516,7 +524,7 @@ export function buildHospitalPrintHtml(model) {
           ${findings}
           ${comments}
         </div>
-        <div class="side4">${f.side.map((m) => figure(m, 'side')).join('')}</div>
+        <div class="side4">${sideFigures.map((m) => figure(m, 'side')).join('')}</div>
       </div>
 
       <div class="sign">

@@ -29,7 +29,7 @@ import BackupView from './components/BackupView.jsx'
 
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, section: 'Clinic' },
-  { id: 'patients', label: 'Patients', icon: Users, section: 'Clinic' },
+  { id: 'patients', label: 'Patient Archive', icon: Users, section: 'Clinic' },
   { id: 'procedures', label: 'Reports', icon: ClipboardList, section: 'Clinic' },
   { id: 'workspace', label: 'Current procedure', icon: Activity, section: 'Clinic' },
   { id: 'templates', label: 'Report template', icon: FileText, section: 'Configuration' },

@@ -220,7 +220,7 @@ export default function PatientList({ doctors, onOpenProcedure, onGoToWorkspace,
 
   return (
     <>
-      <Topbar title="Patients" crumb={`${rows.length} record${rows.length === 1 ? '' : 's'}`}>
+      <Topbar title="Patient Archive" crumb={`${rows.length} record${rows.length === 1 ? '' : 's'}`}>
         <div className="row" style={{ gap: 8 }}>
           <div style={{ position: 'relative' }}>
             <Search size={15} style={{ position: 'absolute', left: 9, top: 9, color: 'var(--ink-4)' }} />
@@ -427,6 +427,23 @@ export default function PatientList({ doctors, onOpenProcedure, onGoToWorkspace,
         patient={editing}
         doctors={doctors}
         onClose={() => setFormOpen(false)}
+        onStartReport={async (patient, opts) => {
+          try {
+            const payload = {
+              ...emptyProcedure(opts.testName),
+              procedureDate: opts.procedureDate,
+              performingDoctor: patient.performingDoctor || '',
+              indication: patient.indication || '',
+              bed: opts.bed || 'OPD',
+              status: 'draft',
+            }
+            const saved = await api.procedures.save(patient.id, payload)
+            onRefreshStats?.()
+            onGoToWorkspace?.(saved.id)
+          } catch (err) {
+            toast.push({ tone: 'err', title: 'Could not start the report', body: err.message })
+          }
+        }}
         onSaved={async (saved) => {
           await load(search)
           setSelectedId(saved.id)
