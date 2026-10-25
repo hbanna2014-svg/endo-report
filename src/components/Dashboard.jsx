@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 
 import { api } from '../lib/api.js'
-import { Button, Card, Chip, Empty, ProcedureChip, Stat, useToast } from './ui.jsx'
+import { Button, Card, Chip, Empty, Input, ProcedureChip, Stat, useToast } from './ui.jsx'
 
 function Topbar({ title, crumb, children }) {
   return (
@@ -34,9 +34,33 @@ function Topbar({ title, crumb, children }) {
   )
 }
 
-function MiniChart({ daily }) {
+function DayBreakdown({ row }) {
+  const items = [
+    { label: 'Endoscopy', value: row.endoscopy || 0, tone: 'blue' },
+    { label: 'Colonoscopy', value: row.colonoscopy || 0, tone: 'teal' },
+    { label: 'Both', value: row.both || 0, tone: 'violet' },
+    { label: 'Polypectomy', value: row.polypectomy || 0, tone: 'amber' },
+    { label: 'Biopsy', value: row.biopsy || 0, tone: 'rose' },
+  ]
+  return (
+    <div className="day-breakdown">
+      {items.map((i) => (
+        <div key={i.label} className={`day-stat tone-${i.tone}`}>
+          <b>{i.value}</b>
+          <span>{i.label}</span>
+        </div>
+      ))}
+      <div className="day-stat tone-total">
+        <b>{row.total || 0}</b>
+        <span>Total</span>
+      </div>
+    </div>
+  )
+}
+
+function MiniChart({ daily, selected, onSelect }) {
   const points = useMemo(() => {
-    const map = new Map((daily || []).map((d) => [String(d.d).slice(0, 10), d.c]))
+    const map = new Map((daily || []).map((d) => [String(d.day || d.d).slice(0, 10), d.total ?? d.c ?? 0]))
     const out = []
     const today = new Date()
     for (let i = 29; i >= 0; i -= 1) {
@@ -57,16 +81,20 @@ function MiniChart({ daily }) {
       <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="110" preserveAspectRatio="none" role="img" aria-label="Procedures over the last 30 days">
         {points.map((p, i) => {
           const barH = (p.count / max) * (h - 18)
+          const isSelected = selected === p.key
           return (
-            <rect
-              key={p.key}
-              x={i * step + 2}
-              y={h - barH - 2}
-              width={Math.max(2, step - 4)}
-              height={Math.max(p.count ? 2 : 1, barH)}
-              rx="2"
-              fill={p.count ? 'url(#g1)' : '#e2e8f0'}
-            />
+            <g key={p.key} style={{ cursor: 'pointer' }} onClick={() => onSelect?.(p.key)}>
+              <title>{`${p.key}: ${p.count} procedure${p.count === 1 ? '' : 's'}`}</title>
+              <rect x={i * step + 2} y={0} width={Math.max(2, step - 4)} height={h} fill="transparent" />
+              <rect
+                x={i * step + 2}
+                y={h - barH - 2}
+                width={Math.max(2, step - 4)}
+                height={Math.max(p.count ? 2 : 1, barH)}
+                rx="2"
+                fill={isSelected ? '#0f766e' : p.count ? 'url(#g1)' : '#e2e8f0'}
+              />
+            </g>
           )
         })}
         <defs>
@@ -90,18 +118,26 @@ function MiniChart({ daily }) {
 export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProcedure, onRefresh }) {
   const toast = useToast()
   const [recent, setRecent] = useState([])
-  const [daily, setDaily] = useState([])
+  const [rows, setRows] = useState([])
+  const [consultants, setConsultants] = useState([])
   const [loading, setLoading] = useState(true)
+  const todayKey = new Date().toISOString().slice(0, 10)
+  const [selectedDate, setSelectedDate] = useState(todayKey)
+  const [consultQuery, setConsultQuery] = useState('')
+  const [consultant, setConsultant] = useState('')
+  const [consultPros, setConsultPros] = useState([])
+  const [consultLoading, setConsultLoading] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [list, maint] = await Promise.all([
+      const [list, counts] = await Promise.all([
         api.procedures.list({ limit: 8 }),
-        api.data.maintenance(30),
+        api.data.counts(30),
       ])
       setRecent(list || [])
-      setDaily(maint?.daily || [])
+      setRows(counts?.daily || [])
+      setConsultants(counts?.consultants || [])
     } catch (err) {
       toast.push({ tone: 'err', title: 'Could not load recent activity', body: err.message })
     } finally {
@@ -109,11 +145,44 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
     }
   }, [toast])
 
+  /** Everything the chosen consultant has performed. */
+  useEffect(() => {
+    if (!consultant) {
+      setConsultPros([])
+      return undefined
+    }
+    let cancelled = false
+    setConsultLoading(true)
+    api.procedures
+      .list({ doctor: consultant, limit: 200 })
+      .then((list) => {
+        if (!cancelled) setConsultPros(list || [])
+      })
+      .catch((err) => toast.push({ tone: 'err', title: 'Could not load the consultant', body: err.message }))
+      .finally(() => {
+        if (!cancelled) setConsultLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [consultant, toast])
+
   useEffect(() => {
     load()
   }, [load])
 
   const empty = !stats || (stats.patients === 0 && stats.procedures === 0)
+
+  const dayKeyOf = (r) => String(r.day || '').slice(0, 10)
+  const dayRow =
+    rows.find((r) => dayKeyOf(r) === selectedDate) || {
+      total: 0, endoscopy: 0, colonoscopy: 0, both: 0, polypectomy: 0, biopsy: 0,
+    }
+  const lastSeven = rows.slice(-7).reverse()
+  const maxTotal = Math.max(1, ...lastSeven.map((r) => r.total || 0))
+  const filteredConsultants = consultants.filter((c) =>
+    String(c.doctor || '').toLowerCase().includes(consultQuery.trim().toLowerCase()),
+  )
 
   return (
     <>
@@ -168,33 +237,106 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
           <Stat label="Videos" value={stats?.videos ?? 0} detail="Recorded clips" tone="violet" />
         </div>
 
-        <div className="grid c2" style={{ marginTop: 16 }}>
-          <Card title="Procedures in the last 30 days" subtitle="Daily case volume">
-            {daily.length ? <MiniChart daily={daily} /> : <div className="small muted">No procedures recorded in this period.</div>}
+        <div className="dash-split" style={{ marginTop: 16 }}>
+          <Card
+            title="Procedures in the last 30 days"
+            subtitle="Pick a date to see exactly what was done"
+            actions={
+              <input
+                type="date"
+                className="dash-date"
+                value={selectedDate}
+                max={todayKey}
+                onChange={(e) => setSelectedDate(e.target.value)}
+              />
+            }
+          >
+            <DayBreakdown row={dayRow} />
+            {rows.length ? (
+              <MiniChart daily={rows} selected={selectedDate} onSelect={setSelectedDate} />
+            ) : (
+              <div className="small muted">No procedures recorded in this period.</div>
+            )}
+            <div className="day-list">
+              <div className="day-list-head">
+                <span>Last 7 days</span>
+                <span>Total</span>
+              </div>
+              {lastSeven.map((r) => (
+                <button
+                  key={r.day}
+                  className={`day-row${selectedDate === r.day ? ' on' : ''}`}
+                  onClick={() => setSelectedDate(r.day)}
+                >
+                  <span className="d">{r.day}</span>
+                  <span className="mini">
+                    <i style={{ width: `${Math.max(4, (r.total / maxTotal) * 100)}%` }} />
+                  </span>
+                  <span className="t">{r.total}</span>
+                </button>
+              ))}
+            </div>
           </Card>
 
-          <Card title="Quick actions">
-            <div className="grid c2">
-              <Button icon={UserPlus} onClick={() => onNavigate('patients')} className="lg">
-                Register patient
-              </Button>
-              <Button icon={FolderOpen} onClick={() => onNavigate('procedures')} className="lg">
-                Browse reports
-              </Button>
-              <Button icon={Camera} onClick={() => onNavigate('workspace')} className="lg">
-                Capture images
-              </Button>
-              <Button icon={FileText} onClick={() => onNavigate('templates')} className="lg">
-                Edit template
-              </Button>
+          <Card
+            title="Consultant"
+            subtitle="Search a name and tick it to see all their procedures"
+            actions={
+              consultant ? (
+                <Button size="sm" onClick={() => setConsultant('')}>
+                  Clear
+                </Button>
+              ) : null
+            }
+          >
+            <Input
+              value={consultQuery}
+              onChange={(e) => setConsultQuery(e.target.value)}
+              placeholder="Search consultant…"
+            />
+            <div className="consult-list">
+              {filteredConsultants.length ? (
+                filteredConsultants.map((c) => {
+                  const on = consultant === c.doctor
+                  return (
+                    <label key={c.doctor} className={`consult-item${on ? ' on' : ''}`}>
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() => setConsultant(on ? '' : c.doctor)}
+                      />
+                      <span className="nm">{c.doctor}</span>
+                      <span className="ct">{c.total}</span>
+                    </label>
+                  )
+                })
+              ) : (
+                <div className="small muted" style={{ padding: '10px 2px' }}>
+                  {consultants.length ? 'No consultant matches that search.' : 'No procedures recorded yet.'}
+                </div>
+              )}
             </div>
-            <div className="banner info" style={{ marginTop: 14 }}>
-              <TrendingUp size={17} style={{ flex: '0 0 17px', marginTop: 1 }} />
-              <div className="small">
-                Everything is stored on this computer in <strong className="mono">{meta?.dataDir || 'your documents folder'}</strong>. Take a
-                backup regularly — the <strong>Backup &amp; restore</strong> screen writes a complete copy you can keep on a USB drive.
+
+            {consultant ? (
+              <div className="consult-results">
+                <div className="consult-head">
+                  {consultant}
+                  <span>{consultLoading ? 'loading…' : `${consultPros.length} procedure(s)`}</span>
+                </div>
+                {consultPros.slice(0, 60).map((p) => (
+                  <button key={p.id} className="consult-row" onClick={() => onOpenProcedure(p.id)}>
+                    <span className="d">{(p.procedureDate || '').slice(0, 10) || '—'}</span>
+                    <span className="n">{p.patientName}</span>
+                    <ProcedureChip type={p.testName} />
+                  </button>
+                ))}
+                {!consultPros.length && !consultLoading ? (
+                  <div className="small muted" style={{ padding: 8 }}>
+                    Nothing recorded for this consultant yet.
+                  </div>
+                ) : null}
               </div>
-            </div>
+            ) : null}
           </Card>
         </div>
 

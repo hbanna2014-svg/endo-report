@@ -4,6 +4,20 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.5 — 2026-10-26
+
+### Dashboard
+
+- **Procedures in the last 30 days** moved to the wide left column and now answers "what was
+  done on a given date": a date picker plus tiles for **Endoscopy · Colonoscopy · Both ·
+  Polypectomy · Biopsy · Total**, a clickable 30-day chart and a last-7-days list.
+- **Quick actions removed**; the space now carries the daily workload detail.
+- **Consultant panel** — search the endoscopists who have recorded procedures, tick one, and
+  every procedure of that consultant is listed with date, patient and type; clicking a row
+  opens the report. `Clear` resets it.
+- Polypectomy counts are derived from the structured record (a polyp documented **and**
+  resected), so a therapeutic act is counted even though it is not a separate procedure type.
+
 ## 0.5.4 — 2026-10-26
 
 ### Changed

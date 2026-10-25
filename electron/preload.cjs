@@ -92,6 +92,7 @@ contextBridge.exposeInMainWorld('endoreport', {
   data: {
     stats: () => invoke('data:stats'),
     maintenance: (days) => invoke('data:maintenance', days),
+    counts: (days) => invoke('data:counts', days),
     backup: () => invoke('data:backup'),
     restore: () => invoke('data:restore'),
     exportJson: () => invoke('data:exportJson'),

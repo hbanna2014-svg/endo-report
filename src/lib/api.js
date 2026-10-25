@@ -81,6 +81,7 @@ export const api = {
   data: {
     stats: guard(bridge?.data?.stats, 'data.stats'),
     maintenance: guard(bridge?.data?.maintenance, 'data.maintenance'),
+    counts: guard(bridge?.data?.counts, 'data.counts'),
     backup: guard(bridge?.data?.backup, 'data.backup'),
     restore: guard(bridge?.data?.restore, 'data.restore'),
     exportJson: guard(bridge?.data?.exportJson, 'data.exportJson'),

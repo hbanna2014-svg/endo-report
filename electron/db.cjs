@@ -537,7 +537,7 @@ async function getProcedure(id) {
   return proc
 }
 
-async function listProcedures({ patientId = null, search = '', testName = null, status = null, from = null, to = null, limit = 500 } = {}) {
+async function listProcedures({ patientId = null, search = '', testName = null, status = null, doctor = null, from = null, to = null, limit = 500 } = {}) {
   const where = []
   const params = []
   let i = 1
@@ -552,6 +552,10 @@ async function listProcedures({ patientId = null, search = '', testName = null, 
   if (status && status !== 'all') {
     where.push(`pr.report_status = $${i++}`)
     params.push(status)
+  }
+  if (doctor) {
+    where.push(`pr.performing_doctor = $${i++}`)
+    params.push(doctor)
   }
   if (from) {
     where.push(`pr.procedure_date >= $${i++}`)
@@ -844,6 +848,49 @@ async function stats() {
   }
 }
 
+/**
+ * Per-day workload, broken down by what was actually done. Polypectomy is
+ * derived from the structured record (a polyp documented *and* resected)
+ * rather than from a separate field, because a polypectomy is an action
+ * performed during an endoscopy, not a procedure type of its own.
+ */
+async function procedureCountsByDay(days = 30) {
+  const since = new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10)
+  return q(
+    `SELECT COALESCE(pr.procedure_date, pr.created_at::text) AS day,
+            COUNT(*)::int AS total,
+            CAST(COUNT(*) FILTER (WHERE pr.test_name = 'ogd') AS int) AS endoscopy,
+            CAST(COUNT(*) FILTER (WHERE pr.test_name = 'colonoscopy') AS int) AS colonoscopy,
+            CAST(COUNT(*) FILTER (WHERE pr.test_name = 'both') AS int) AS both,
+            CAST(COUNT(*) FILTER (
+              WHERE pr.payload::text ILIKE '%polyp%' AND pr.payload::text ILIKE '%resect%'
+            ) AS int) AS polypectomy,
+            CAST(COUNT(*) FILTER (WHERE pr.payload->'biopsy'->>'taken' = 'true') AS int) AS biopsy,
+            CAST(COUNT(*) FILTER (WHERE pr.report_status = 'final') AS int) AS finalised
+     FROM procedures pr
+     WHERE COALESCE(pr.procedure_date, pr.created_at::text) >= $1
+     GROUP BY 1 ORDER BY 1 ASC`,
+    [since],
+  )
+}
+
+/** Every endoscopist who has recorded a procedure, with totals. */
+async function consultantStats(days = 30) {
+  const since = new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10)
+  return q(
+    `SELECT COALESCE(NULLIF(pr.performing_doctor, ''), '(not recorded)') AS doctor,
+            COUNT(*)::int AS total,
+            CAST(COUNT(*) FILTER (
+              WHERE COALESCE(pr.procedure_date, pr.created_at::text) >= $1
+            ) AS int) AS recent,
+            MAX(COALESCE(pr.procedure_date, pr.created_at::text)) AS last_date
+     FROM procedures pr
+     GROUP BY 1
+     ORDER BY total DESC, doctor ASC`,
+    [since],
+  )
+}
+
 async function maintenanceSummary(days = 30) {
   const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
   const rows = await q(
@@ -890,6 +937,8 @@ module.exports = {
   setSetting,
   stats,
   maintenanceSummary,
+  procedureCountsByDay,
+  consultantStats,
   migrate,
   readSchemaVersion,
   getLastMigration: () => lastMigration,

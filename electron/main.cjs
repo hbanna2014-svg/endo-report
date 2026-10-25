@@ -136,7 +136,7 @@ function createWindow() {
                 `(() => {
                    const want = ${JSON.stringify(label)};
                    const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim();
-                   const nodes = [...document.querySelectorAll('button, .nav-item, tr, .listitem, .sectionitem')];
+                   const nodes = [...document.querySelectorAll('button, .nav-item, tr, .listitem, .sectionitem, .consult-item, .day-row')];
                    const texts = nodes.map((e) => norm(e.textContent));
                    // 1) exact label  2) label followed only by a counter badge  3) substring
                    let idx = texts.indexOf(want);
@@ -1022,6 +1022,10 @@ function registerIpc() {
   /* Data ----------------------------------------------------------------- */
   handle('data:stats', () => db.stats())
   handle('data:maintenance', (days) => db.maintenanceSummary(days || 30))
+  handle('data:counts', async (days = 30) => ({
+    daily: await db.procedureCountsByDay(days || 30),
+    consultants: await db.consultantStats(days || 30),
+  }))
   handle('data:backup', () => runBackup())
   handle('data:restore', () => runRestore())
   handle('data:exportJson', async () => {
