@@ -4,6 +4,14 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.8 — 2026-10-26
+
+### Dashboard
+
+- The large welcome banner is gone. In its place is a compact bordered box holding only
+  **New patient · All reports · Backup**, with no heading or description text. The dashboard
+  starts straight at the day's patient list.
+
 ## 0.5.7 — 2026-10-26
 
 ### Dashboard

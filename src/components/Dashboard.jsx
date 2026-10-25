@@ -308,16 +308,9 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
       </Topbar>
 
       <div className="content">
-        <div className="hero">
-          <div>
-            <h1>Endoscopy &amp; colonoscopy reporting, entirely offline</h1>
-            <p>
-              Register the patient, document the procedure section by section, capture images and video, then print or
-              export a Word report — all without an internet connection.
-            </p>
-          </div>
-          <div className="actions">
-            <Button className="solid" icon={UserPlus} onClick={() => onNavigate('patients')}>
+        <div className="hero-bar">
+          <div className="hero-frame">
+            <Button variant="primary" icon={UserPlus} onClick={() => onNavigate('patients')}>
               New patient
             </Button>
             <Button icon={ClipboardList} onClick={() => onNavigate('procedures')}>
