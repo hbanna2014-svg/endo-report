@@ -1,0 +1,1335 @@
+/**
+ * findings-ogd.js
+ * ---------------------------------------------------------------------------
+ * Finding catalogue for Upper GI Endoscopy, keyed by anatomical section.
+ *
+ * Each finding drives three things automatically:
+ *   phrase      -> the descriptive sentence inserted into the report body
+ *   impression  -> the line inserted into the "Impression" block
+ *   advice      -> recommendations appended to the "Recommendation" block
+ *
+ * `{field}` placeholders are replaced with the value entered by the endoscopist.
+ * `fields[].required = true` means the finding is clinically incomplete until
+ * that value is filled in — the completeness audit raises a warning otherwise.
+ */
+
+/** Forrest classification of peptic ulcer bleeding stigmata. */
+const FORREST_OPTIONS = [
+  { value: 'Ia — spurting arterial bleeding', label: 'Ia — Spurting bleed' },
+  { value: 'Ib — oozing bleeding', label: 'Ib — Oozing bleed' },
+  { value: 'IIa — non-bleeding visible vessel', label: 'IIa — Visible vessel' },
+  { value: 'IIb — adherent clot', label: 'IIb — Adherent clot' },
+  { value: 'IIc — black flat spot (haematins)', label: 'IIc — Flat pigmented spot' },
+  { value: 'III — clean base', label: 'III — Clean base' },
+]
+
+const ULCER_SIZE_FIELD = { key: 'size', label: 'Size (mm)', type: 'number', required: true }
+
+export const OGD_FINDINGS = {
+  /* ------------------------------------------------------------------ */
+  oesophagus: [
+    {
+      id: 'normal_oesophagus',
+      label: 'Normal oesophagus',
+      severity: 'normal',
+      isNormal: true,
+      phrase: 'The oesophagus was normal. Mucosa was smooth and pink with a normal vascular pattern, peristalsis was adequate and the lumen was patent.',
+      impression: null,
+      advice: [],
+    },
+    {
+      id: 'reflux_oesophagitis',
+      label: 'Reflux oesophagitis',
+      severity: 'moderate',
+      tags: ['inflammatory', 'biopsy-consider'],
+      biopsy: true,
+      fields: [
+        {
+          key: 'la_grade',
+          label: 'Los Angeles grade',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'A', label: 'A — one or more mucosal breaks ≤ 5 mm' },
+            { value: 'B', label: 'B — mucosal breaks > 5 mm, not continuous' },
+            { value: 'C', label: 'C — mucosal breaks continuous between folds < 75%' },
+            { value: 'D', label: 'D — circumferential mucosal breaks ≥ 75%' },
+          ],
+        },
+      ],
+      phrase: 'Erosive reflux oesophagitis, Los Angeles grade {la_grade}, was seen in the distal oesophagus with mucosal breaks and surrounding erythema. There was no bleeding.',
+      impression: "Reflux oesophagitis, LA grade {la_grade}",
+      advice: [
+        'Full-dose proton pump inhibitor for 8 weeks followed by maintenance therapy',
+        'Lifestyle advice: weight reduction, avoidance of late meals, head-end elevation',
+        'Follow-up endoscopy if symptoms persist after 8 weeks of therapy',
+      ],
+    },
+    {
+      id: 'oesophageal_varices',
+      label: 'Oesophageal varices',
+      severity: 'severe',
+      tags: ['portal-hypertension'],
+      fields: [
+        {
+          key: 'grade',
+          label: 'Size / grade',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'small (Grade I)', label: 'Small — Grade I' },
+            { value: 'medium (Grade II)', label: 'Medium — Grade II' },
+            { value: 'large (Grade III)', label: 'Large — Grade III' },
+            { value: 'very large (Grade IV)', label: 'Very large — Grade IV' },
+          ],
+        },
+        {
+          key: 'red_wale',
+          label: 'Red wale marks / cherry-red spots',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'absent', label: 'Absent' },
+            { value: 'present', label: 'Present' },
+          ],
+        },
+      ],
+      phrase: 'Oesophageal varices of {grade} size were seen in the distal oesophagus with red wale marks {red_wale}. There was no active bleeding at the time of examination.',
+      impression: 'Oesophageal varices — {grade} (red wale marks: {red_wale})',
+      advice: [
+        'Evaluate for band ligation — repeat until eradication (usually every 2–4 weeks)',
+        'Start non-selective beta blocker (propranolol / carvedilol) if not contraindicated',
+        'Screen for portal hypertension: LFT, ultrasound with portal Doppler, platelet count',
+        'Primary prophylaxis discussion with hepatologist',
+      ],
+    },
+    {
+      id: 'oesophageal_candidiasis',
+      label: 'Oesophageal candidiasis',
+      severity: 'moderate',
+      tags: ['infective'],
+      fields: [
+        {
+          key: 'distribution',
+          label: 'Extent',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'patchy', label: 'Patchy' },
+            { value: 'extensive', label: 'Extensive / confluent' },
+          ],
+        },
+      ],
+      phrase: 'Multiple {distribution} whitish adherent plaques were noted throughout the oesophagus, consistent with oesophageal candidiasis.',
+      impression: 'Oesophageal candidiasis ({distribution}) — consider underlying immunosuppression',
+      advice: [
+        'Oral fluconazole 150–200 mg daily for 14–21 days',
+        'Screen for diabetes mellitus and immunosuppressive states including HIV if risk factors present',
+        'Consider biopsy/Touch preparation to confirm fungal elements',
+      ],
+    },
+    {
+      id: 'oesophageal_stricture',
+      label: 'Oesophageal stricture',
+      severity: 'severe',
+      tags: ['obstructive'],
+      fields: [
+        { key: 'distance', label: 'Distance from incisors (cm)', type: 'number', required: true },
+        { key: 'diameter', label: 'Estimated diameter (mm)', type: 'number', required: false },
+        {
+          key: 'traversable',
+          label: 'Traversed with endoscope',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'yes', label: 'Yes' },
+            { value: 'no — mild resistance', label: 'No — mild resistance' },
+            { value: 'no — could not be negotiated', label: 'No — could not be negotiated' },
+          ],
+        },
+        { key: 'dilation', label: 'Dilation performed', type: 'select', required: false, options: [
+          { value: 'not performed', label: 'Not performed' },
+          { value: 'single session balloon dilation', label: 'Single session balloon dilation' },
+          { value: 'savary bougie dilation', label: 'Savary–Gilliard bougie dilation' },
+        ] },
+      ],
+      phrase: 'A benign looking stricture was seen at {distance} cm from the incisors, estimated diameter {diameter} mm. It was traversed with the endoscope: {traversable}. Dilation: {dilation}.',
+      impression: 'Oesophageal stricture at {distance} cm — likely peptic / anastomotic',
+      advice: [
+        'Multiple biopsies from the stricture to exclude malignancy',
+        'Serial dilation (balloon or Savary–Gilliard) every 2–4 weeks to target 15–18 mm',
+        'Acid suppression with proton pump inhibitor',
+        'Consider dilatation attempt if recurrent dysphagia',
+      ],
+    },
+    {
+      id: 'schatzki_ring',
+      label: 'Schatzki ring',
+      severity: 'mild',
+      phrase: 'A thin concentric mucosal ring was seen at the gastro-oesophageal junction (Schatzki ring) with a narrowed lumen.',
+      impression: 'Schatzki ring — a cause of intermittent dysphagia',
+      advice: ['Consider bougie dilation if dysphagia is troublesome', 'Acid suppression to prevent recurrence'],
+    },
+    {
+      id: 'oesophageal_web',
+      label: 'Oesophageal web',
+      severity: 'mild',
+      fields: [{ key: 'location', label: 'Location', type: 'text', required: false }],
+      phrase: 'A thin membranous web was seen in the oesophagus {location}.',
+      impression: 'Oesophageal web',
+      advice: ['Consider evaluation for iron deficiency anaemia (Plummer–Vinson syndrome)'],
+    },
+    {
+      id: 'oesophageal_ulcer',
+      label: 'Oesophageal ulcer',
+      severity: 'moderate',
+      tags: ['biopsy-consider'],
+      fields: [
+        { key: 'distance', label: 'Distance from incisors (cm)', type: 'number', required: true },
+        { key: 'size', label: 'Size (mm)', type: 'number', required: true },
+      ],
+      phrase: 'An oesophageal ulcer, approximately {size} mm, was seen at {distance} cm from the incisors with a clean base.',
+      impression: 'Oesophageal ulcer at {distance} cm',
+      advice: ['Multiple biopsies from the ulcer edge to exclude malignancy', 'Proton pump inhibitor for 6–8 weeks'],
+    },
+    {
+      id: 'oesophageal_mass',
+      label: 'Oesophageal mass / suspected malignancy',
+      severity: 'critical',
+      tags: ['malignancy', 'biopsy-required'],
+      biopsy: true,
+      fields: [
+        { key: 'distance', label: 'Proximal extent from incisors (cm)', type: 'number', required: true },
+        { key: 'extent', label: 'Extent', type: 'text', required: true },
+        {
+          key: 'obstruction',
+          label: 'Degree of luminal obstruction',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'non-obstructing', label: 'Non-obstructing' },
+            { value: 'partially obstructing', label: 'Partially obstructing' },
+            { value: 'near-complete obstruction — scope could not be passed', label: 'Near complete — scope could not be passed' },
+          ],
+        },
+      ],
+      phrase: 'A proliferative, friable growth was seen starting at {distance} cm from the incisors, extending {extent}, {obstruction}. It bled on contact.',
+      impression: 'Oesophageal growth — suspected malignancy, {obstruction}. Biopsy taken.',
+      advice: [
+        'Multiple (6–8) biopsies from the margins and base of the lesion',
+        'CT chest/abdomen with oral contrast plus staging PET if indicated',
+        'Refer to upper GI multidisciplinary team / surgical oncology',
+        'Consider nutritional support and dysphagia management',
+      ],
+    },
+    {
+      id: 'oesophageal_erosions',
+      label: 'Oesophageal erosions',
+      severity: 'mild',
+      phrase: 'Superficial linear erosions were seen in the lower oesophagus without active bleeding.',
+      impression: 'Distal oesophageal erosions',
+      advice: ['Proton pump inhibitor for 8 weeks'],
+    },
+    {
+      id: 'food_residue',
+      label: 'Retained food residue / fluid',
+      severity: 'moderate',
+      tags: ['obstructive'],
+      fields: [
+        {
+          key: 'amount',
+          label: 'Amount',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'a small amount of', label: 'Small' },
+            { value: 'a moderate amount of', label: 'Moderate' },
+            { value: 'a large amount of', label: 'Large — obscured the mucosa' },
+          ],
+        },
+      ],
+      phrase: 'There was {amount} retained food residue and fluid in the oesophagus which partially obscured the mucosa.',
+      impression: 'Retained food residue — suggests impaired oesophageal emptying; consider achalasia / obstruction',
+      advice: [
+        'Barium swallow and oesophageal manometry',
+        'Repeat endoscopy after prolonged fasting once clearance is achieved',
+        'Review for achalasia, stricture or pseudoachalasia',
+      ],
+    },
+    { id: 'oesophagus_not_examined', label: 'Not examined / not reached', severity: 'unknown', isNegative: true, phrase: 'The oesophagus could not be adequately assessed.', impression: null, advice: [] },
+  ],
+
+  /* ------------------------------------------------------------------ */
+  gej: [
+    {
+      id: 'normal_gej',
+      label: 'Normal gastro-oesophageal junction',
+      severity: 'normal',
+      isNormal: true,
+      phrase: 'The gastro-oesophageal junction was at the normal position with a regular Z-line. Retroflexion showed a competent cardia with no laxity.',
+      impression: null,
+      advice: [],
+    },
+    {
+      id: 'hiatus_hernia',
+      label: 'Hiatus hernia',
+      severity: 'mild',
+      fields: [
+        {
+          key: 'size',
+          label: 'Approximate length (cm)',
+          type: 'number',
+          required: true,
+        },
+        {
+          key: 'type',
+          label: 'Type',
+          type: 'select',
+          required: false,
+          options: [
+            { value: 'sliding', label: 'Sliding (type I)' },
+            { value: 'para-oesophageal', label: 'Para-oesophageal (type II/III)' },
+          ],
+        },
+      ],
+      phrase: 'A {size} cm hiatus hernia was present with the Z-line displaced above the diaphragmatic impression. Retroflexion showed a lax cardia.',
+      impression: 'Hiatus hernia ({size} cm)',
+      advice: [
+        'Proton pump inhibitor for reflux symptoms',
+        'Weight reduction, small frequent meals, avoidance of lying down within 3 hours of eating',
+        'Surgical referral only if refractory symptoms or large para-oesophageal component',
+      ],
+    },
+    {
+      id: 'barretts',
+      label: "Barrett's oesophagus",
+      severity: 'moderate',
+      tags: ['premalignant', 'surveillance', 'biopsy-required'],
+      biopsy: true,
+      fields: [
+        { key: 'prague_c', label: 'Prague C (circumferential, cm)', type: 'number', required: true },
+        { key: 'prague_m', label: 'Prague M (maximal, cm)', type: 'number', required: true },
+        {
+          key: 'visible_lesion',
+          label: 'Visible lesion inside Barrett segment',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'none', label: 'None' },
+            { value: 'nodule/irregularity present', label: 'Nodule / irregularity present — target biopsy taken' },
+          ],
+        },
+      ],
+      phrase: "Salmon-coloured mucosa was seen extending above the gastro-oesophageal junction, Prague classification C{prague_c}M{prague_m}. Visible lesion within the segment: {visible_lesion}. Seattle protocol biopsies were taken.",
+      impression: "Barrett's oesophagus, Prague C{prague_c}M{prague_m}",
+      advice: [
+        'Four-quadrant biopsies every 2 cm (Seattle protocol) — ensure this is documented',
+        'Twice-daily proton pump inhibitor',
+        'Surveillance endoscopy: non-dysplastic 3–5 years; low-grade dysplasia 6–12 months (or 6 months if confirmed)',
+        'Refer for endoscopic eradication therapy (RFA / EMR) if high-grade dysplasia or intramucosal carcinoma',
+      ],
+    },
+    {
+      id: 'incompetent_cardia',
+      label: 'Incompetent / lax cardia on retroflexion',
+      severity: 'mild',
+      phrase: 'Retroflexion revealed a patulous, lax cardia with a wide hiatal opening and no tight grip on the endoscope.',
+      impression: 'Incompetent cardia — antireflux barrier deficiency',
+      advice: ['Antireflux measures and acid suppression', 'Consider antireflux surgery only if refractory to medical therapy'],
+    },
+    {
+      id: 'gej_erosion',
+      label: 'Erosion at the gastro-oesophageal junction',
+      severity: 'mild',
+      phrase: 'A discrete erosion was noted at the gastro-oesophageal junction with surrounding mucosal erythema.',
+      impression: 'GEJ erosion',
+      advice: ['Proton pump inhibitor for 8 weeks'],
+    },
+    { id: 'gej_not_examined', label: 'Not examined / not reached', severity: 'unknown', isNegative: true, phrase: 'The gastro-oesophageal junction could not be adequately assessed.', impression: null, advice: [] },
+  ],
+
+  /* ------------------------------------------------------------------ */
+  fundus: [
+    {
+      id: 'normal_fundus',
+      label: 'Normal fundus',
+      severity: 'normal',
+      isNormal: true,
+      phrase: 'The fundus and cardia appeared normal with smooth rugal folds and no mucosal abnormality. Retroflexed view was satisfactory.',
+      impression: null,
+      advice: [],
+    },
+    {
+      id: 'fundal_gastritis_erythematous',
+      label: 'Erythematous fundal gastritis',
+      severity: 'mild',
+      tags: ['inflammatory'],
+      phrase: 'Patchy mucosal erythema and oedema were seen in the fundus, consistent with erythematous gastritis.',
+      impression: 'Erythematous fundal gastritis',
+      advice: ['Consider H. pylori testing (rapid urease / stool antigen / histology)', 'Antacid or PPI for symptom control'],
+    },
+    {
+      id: 'fundic_gland_polyps',
+      label: 'Fundic gland polyps',
+      severity: 'mild',
+      tags: ['polyp'],
+      fields: [
+        { key: 'number', label: 'Number', type: 'text', required: true },
+        { key: 'size', label: 'Largest size (mm)', type: 'number', required: true },
+      ],
+      phrase: '{number} small, smooth, translucent sessile polyps, the largest about {size} mm, were seen in the fundus and body.',
+      impression: 'Fundic gland polyps ({number}, largest {size} mm)',
+      advice: [
+        'Fundic gland polyps are usually benign; biopsy of the largest lesion is reasonable',
+        'Review long-term proton pump inhibitor use and family history of familial adenomatous polyposis',
+        'Surveillance endoscopy is not routinely required for typical lesions',
+      ],
+    },
+    {
+      id: 'gastric_varices',
+      label: 'Gastric varices',
+      severity: 'severe',
+      tags: ['portal-hypertension'],
+      fields: [
+        {
+          key: 'type',
+          label: 'Type',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'GOV1 — along the lesser curve', label: 'GOV1 — lesser curve' },
+            { value: 'GOV2 — along the greater curve / fundus', label: 'GOV2 — greater curve / fundus' },
+            { value: 'IGV1 — isolated fundal varices', label: 'IGV1 — isolated fundal varices' },
+          ],
+        },
+      ],
+      phrase: 'Large tortuous submucosal veins were seen in the fundus — {type} — without active bleeding or stigmata of recent haemorrhage.',
+      impression: 'Gastric varices ({type}) in a background of portal hypertension',
+      advice: [
+        'Urgent hepatology referral for portal hypertension management',
+        'Consider cyanoacrylate glue injection or TIPS if bleeding or high-risk stigmata',
+        'Non-selective beta blocker if not contraindicated',
+      ],
+    },
+    {
+      id: 'submucosal_lesion_fundus',
+      label: 'Subepithelial / submucosal lesion',
+      severity: 'moderate',
+      tags: ['biopsy-consider'],
+      fields: [
+        { key: 'size', label: 'Size (mm)', type: 'number', required: true },
+        {
+          key: 'mucosa',
+          label: 'Overlying mucosa',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'normal', label: 'Normal' },
+            { value: 'with central ulceration / dimpling', label: 'Central ulceration / dimpling (suggests GIST)' },
+          ],
+        },
+      ],
+      phrase: 'A smooth subepithelial swelling about {size} mm in size was seen with overlying mucosa {mucosa}.',
+      impression: 'Subepithelial lesion in the fundus ({size} mm) — GIST / leiomyoma / lipoma',
+      advice: [
+        'Endoscopic ultrasound (EUS) for characterisation and layer of origin',
+        'Do not attempt snare polypectomy of a subepithelial lesion',
+        'Consider CT for larger lesions and EUS-FNA if suspicious',
+      ],
+    },
+    {
+      id: 'fundal_mass',
+      label: 'Fundal mass / suspected malignancy',
+      severity: 'critical',
+      tags: ['malignancy', 'biopsy-required'],
+      biopsy: true,
+      fields: [{ key: 'size', label: 'Approximate size (cm)', type: 'text', required: true }],
+      phrase: 'An irregular, friable, ulcerated mass {size} in size was seen in the fundus, bleeding on contact.',
+      impression: 'Gastric mass in the fundus — suspected malignancy. Biopsies taken.',
+      advice: [
+        'Multiple biopsies from the mass (6–8 from margins)',
+        'Staging CT chest/abdomen/pelvis, consider EUS for T-staging',
+        'Refer to upper GI multidisciplinary team',
+      ],
+    },
+    { id: 'fundus_not_examined', label: 'Not examined / not reached', severity: 'unknown', isNegative: true, phrase: 'The fundus could not be adequately assessed.', impression: null, advice: [] },
+  ],
+
+  /* ------------------------------------------------------------------ */
+  body: [
+    {
+      id: 'normal_body',
+      label: 'Normal gastric body',
+      severity: 'normal',
+      isNormal: true,
+      phrase: 'The body of the stomach was normal with well-formed rugal folds, a smooth mucosal surface and a preserved vascular pattern. No ulcer, erosion or mass was seen.',
+      impression: null,
+      advice: [],
+    },
+    {
+      id: 'body_gastritis_erythematous',
+      label: 'Erythematous gastritis of the body',
+      severity: 'mild',
+      tags: ['inflammatory'],
+      fields: [
+        {
+          key: 'extent',
+          label: 'Extent',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'patchy', label: 'Patchy' },
+            { value: 'diffuse', label: 'Diffuse' },
+          ],
+        },
+      ],
+      phrase: '{extent} mucosal erythema and oedema were seen in the gastric body, consistent with erythematous gastritis.',
+      impression: 'Erythematous gastritis of the gastric body ({extent})',
+      advice: [
+        'Record H. pylori status — rapid urease test, histology, stool antigen or urea breath test',
+        'Proton pump inhibitor for 4–8 weeks with review of symptoms',
+        'Review NSAID, aspirin and alcohol use',
+      ],
+    },
+    {
+      id: 'body_gastritis_erosive',
+      label: 'Erosive gastritis',
+      severity: 'moderate',
+      tags: ['inflammatory', 'biopsy-consider'],
+      fields: [
+        { key: 'number', label: 'Number of erosions', type: 'text', required: true },
+        {
+          key: 'bleeding',
+          label: 'Stigmata of bleeding',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'none', label: 'None' },
+            { value: 'haematin-covered bases', label: 'Haematin-covered bases' },
+            { value: 'active oozing', label: 'Active oozing' },
+          ],
+        },
+      ],
+      phrase: '{number} superficial erosions with {bleeding} were seen on the mucosal folds of the gastric body.',
+      impression: 'Erosive gastritis ({number} erosions, bleeding: {bleeding})',
+      advice: [
+        'Stop NSAIDs and aspirin where clinically possible',
+        'Full-dose proton pump inhibitor for 8 weeks',
+        'Test and treat H. pylori if positive',
+      ],
+    },
+    {
+      id: 'atrophic_gastritis',
+      label: 'Atrophic gastritis / intestinal metaplasia',
+      severity: 'moderate',
+      tags: ['premalignant', 'surveillance', 'biopsy-required'],
+      biopsy: true,
+      fields: [
+        {
+          key: 'pattern',
+          label: 'Pattern',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'loss of rugal folds with visible submucosal vessels', label: 'Loss of folds with visible vessels' },
+            { value: 'pale, flattened mucosa with a fine network pattern', label: 'Pale flattened mucosa' },
+            { value: 'patchy with areas of intestinal metaplasia', label: 'Patchy with intestinal metaplasia' },
+          ],
+        },
+        {
+          key: 'extension',
+          label: 'Distribution',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'antrum-predominant', label: 'Antrum-predominant' },
+            { value: 'corpus-predominant', label: 'Corpus-predominant (autoimmune pattern)' },
+            { value: 'pangastric', label: 'Pangastric' },
+          ],
+        },
+      ],
+      phrase: 'The mucosa showed {pattern}, {extension} in distribution, consistent with atrophic gastritis with possible intestinal metaplasia. Mapping biopsies were taken using the updated Sydney system.',
+      impression: 'Atrophic gastritis with intestinal metaplasia ({extension}) — premalignant condition requiring surveillance',
+      advice: [
+        'Updated Sydney system biopsies: two from the antrum, two from the corpus, one from the incisura',
+        'Test and eradicate H. pylori',
+        'Consider serum gastrin, pepsinogen and intrinsic factor/anti-parietal cell antibodies if corpus-predominant',
+        'Endoscopic surveillance every 3 years for extensive intestinal metaplasia, or 1–2 years if advanced',
+        'Check vitamin B12, iron studies and calcium if autoimmune gastritis is suspected',
+      ],
+    },
+    {
+      id: 'gastric_ulcer',
+      label: 'Gastric ulcer',
+      severity: 'severe',
+      tags: ['biopsy-required', 'bleeding-risk'],
+      biopsy: true,
+      fields: [
+        { key: 'site', label: 'Site within the body', type: 'text', required: true },
+        ULCER_SIZE_FIELD,
+        { key: 'forrest', label: 'Forrest class', type: 'select', required: true, options: FORREST_OPTIONS },
+        { key: 'depth', label: 'Depth', type: 'select', required: false, options: [
+          { value: 'shallow', label: 'Shallow' },
+          { value: 'deep', label: 'Deep' },
+        ] },
+      ],
+      phrase: 'A {depth} gastric ulcer approximately {size} mm in diameter was seen at {site}, Forrest class {forrest}, with surrounding mucosal oedema and converging folds.',
+      impression: 'Gastric ulcer at {site}, about {size} mm (Forrest {forrest})',
+      advice: [
+        'Biopsy from the ulcer edge AND the base — gastric ulcers must be biopsied to exclude malignancy',
+        'Repeat endoscopy at 6–8 weeks to confirm healing and to re-biopsy if not healed',
+        'Full-dose proton pump inhibitor for 8 weeks',
+        'Test and eradicate H. pylori; stop NSAIDs and aspirin where possible',
+        'Urgent endoscopy if signs of rebleeding develop',
+      ],
+    },
+    {
+      id: 'gastric_polyp_body',
+      label: 'Gastric polyp(s)',
+      severity: 'moderate',
+      tags: ['polyp'],
+      fields: [
+        { key: 'number', label: 'Number', type: 'text', required: true },
+        { key: 'size', label: 'Largest size (mm)', type: 'number', required: true },
+        {
+          key: 'resection',
+          label: 'Management',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'cold forceps biopsy avulsion', label: 'Cold forceps biopsy avulsion' },
+            { value: 'snare polypectomy', label: 'Snare polypectomy' },
+            { value: 'endoscopic mucosal resection (EMR)', label: 'Endoscopic mucosal resection (EMR)' },
+            { value: 'biopsied only', label: 'Biopsied only' },
+            { value: 'left in situ for surveillance', label: 'Left in situ' },
+          ],
+        },
+      ],
+      phrase: '{number} polyp(s) were seen in the gastric body, the largest about {size} mm. Management: {resection}. The specimen was sent for histopathology.',
+      impression: 'Gastric polyp(s) in the body — {number} lesion(s), largest {size} mm',
+      advice: [
+        'Await histopathology — gastric adenomas require complete resection and surveillance',
+        'Biopsy of the surrounding mucosa to look for atrophic gastritis and H. pylori',
+        'Surveillance endoscopy at 1 year for adenomatous polyps, then according to histology',
+      ],
+    },
+    {
+      id: 'submucosal_lesion_body',
+      label: 'Subepithelial / submucosal lesion',
+      severity: 'moderate',
+      tags: ['biopsy-consider'],
+      fields: [
+        { key: 'size', label: 'Size (mm)', type: 'number', required: true },
+        {
+          key: 'mucosa',
+          label: 'Overlying mucosa',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'normal', label: 'Normal' },
+            { value: 'with central ulceration / dimpling', label: 'Central ulceration / dimpling' },
+          ],
+        },
+      ],
+      phrase: 'A smooth subepithelial swelling about {size} mm was seen in the gastric body with overlying mucosa {mucosa}.',
+      impression: 'Subepithelial lesion of the gastric body ({size} mm) — GIST / leiomyoma / lipoma',
+      advice: [
+        'Endoscopic ultrasound (EUS) to define the layer of origin and to guide sampling',
+        'Do not attempt snare polypectomy of a subepithelial lesion',
+        'Cross-sectional imaging and EUS-FNA if the lesion is large or has high-risk features',
+      ],
+    },
+    {
+      id: 'gastric_mass_body',
+      label: 'Gastric mass / suspected malignancy',
+      severity: 'critical',
+      tags: ['malignancy', 'biopsy-required'],
+      biopsy: true,
+      fields: [
+        { key: 'size', label: 'Approximate size (cm)', type: 'text', required: true },
+        { key: 'site', label: 'Site', type: 'text', required: true },
+        {
+          key: 'obstruction',
+          label: 'Obstruction',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'non-obstructing', label: 'Non-obstructing' },
+            { value: 'partially obstructing', label: 'Partially obstructing' },
+          ],
+        },
+      ],
+      phrase: 'An irregular, friable, ulcerated mass {size} in size was seen at {site}, {obstruction}, bleeding on contact.',
+      impression: 'Gastric mass at {site} — suspected malignancy. Biopsies taken.',
+      advice: [
+        'Multiple biopsies (6–8) from the mass including from the margins',
+        'Staging CT chest/abdomen/pelvis; consider EUS for T and N staging',
+        'Urgent upper GI multidisciplinary team referral',
+      ],
+    },
+    {
+      id: 'gastric_fold_hypertrophy',
+      label: 'Hypertrophic gastric folds',
+      severity: 'moderate',
+      tags: ['biopsy-required'],
+      biopsy: true,
+      fields: [
+        {
+          key: 'pattern',
+          label: 'Pattern',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'enlarged tortuous folds in the body and fundus', label: 'Enlarged tortuous folds (body/fundus)' },
+            { value: 'localised fold thickening', label: 'Localised fold thickening' },
+          ],
+        },
+      ],
+      phrase: '{pattern} were seen with a thickened, oedematous mucosal appearance. The stomach was distended and the folds did not flatten fully with insufflation.',
+      impression: 'Hypertrophic gastric folds — consider Ménétrier disease, Zollinger–Ellison syndrome or malignancy',
+      advice: [
+        'Deep (jumbo forceps) biopsies and consideration of snare "lift and cut" biopsy of the fold',
+        'Serum gastrin level and gastric acid studies if Zollinger–Ellison syndrome is suspected',
+        'EUS and cross-sectional imaging to exclude an infiltrative process',
+      ],
+    },
+    {
+      id: 'portal_hypertensive_gastropathy',
+      label: 'Portal hypertensive gastropathy',
+      severity: 'moderate',
+      tags: ['portal-hypertension'],
+      fields: [
+        {
+          key: 'grade',
+          label: 'Severity',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'mild — mosaic (snakeskin) pattern only', label: 'Mild — mosaic pattern' },
+            { value: 'severe — mosaic pattern with cherry-red spots', label: 'Severe — mosaic with red spots' },
+          ],
+        },
+      ],
+      phrase: 'A {grade} mosaic mucosal pattern was seen throughout the body and fundus, consistent with portal hypertensive gastropathy.',
+      impression: 'Portal hypertensive gastropathy — {grade}',
+      advice: [
+        'Non-selective beta blocker if not contraindicated',
+        'Assess for portal hypertension: LFT, ultrasound with portal Doppler, platelet count, endoscopic variceal screen',
+        'Consider iron supplementation if there is chronic blood loss',
+      ],
+    },
+    {
+      id: 'coffee_ground_blood',
+      label: 'Blood / coffee-ground material in the stomach',
+      severity: 'severe',
+      tags: ['bleeding-risk'],
+      fields: [
+        {
+          key: 'amount',
+          label: 'Amount',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'a small amount of', label: 'Small' },
+            { value: 'a moderate amount of', label: 'Moderate' },
+            { value: 'a large amount of', label: 'Large — partly obscuring the mucosa' },
+          ],
+        },
+        {
+          key: 'source',
+          label: 'Obvious source identified',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'yes — see the relevant section', label: 'Yes' },
+            { value: 'no bleeding point identified', label: 'No — no bleeding point identified' },
+          ],
+        },
+      ],
+      phrase: 'There was {amount} altered blood in the stomach. Source identification: {source}. The stomach was lavaged and examined as thoroughly as possible.',
+      impression: 'Upper GI bleeding — {source}',
+      advice: [
+        'Admit for observation and repeat endoscopy; do not discharge on the day of a bleeding presentation',
+        'Cross-match blood and check full blood count, urea, creatinine and coagulation',
+        'Full-dose intravenous proton pump inhibitor if high-risk stigmata are present',
+        'Document the Rockall or Glasgow-Blatchford score in the notes',
+      ],
+    },
+    {
+      id: 'body_not_examined',
+      label: 'Not examined / not reached',
+      severity: 'unknown',
+      isNegative: true,
+      phrase: 'The body of the stomach could not be adequately assessed.',
+      impression: null,
+      advice: [],
+    },
+  ],
+
+  /* ------------------------------------------------------------------ */
+  antrum: [
+    {
+      id: 'normal_antrum',
+      label: 'Normal antrum',
+      severity: 'normal',
+      isNormal: true,
+      phrase: 'The antrum appeared normal with a smooth, pink mucosa, regular antral peristalsis and no erosion, ulcer or mass.',
+      impression: null,
+      advice: [],
+    },
+    {
+      id: 'antral_gastritis_erythematous',
+      label: 'Erythematous / antral gastritis',
+      severity: 'mild',
+      tags: ['inflammatory'],
+      fields: [
+        {
+          key: 'extent',
+          label: 'Extent',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'patchy antral', label: 'Patchy, antrum only' },
+            { value: 'diffuse antral with extension along the lesser curve', label: 'Diffuse antral + lesser curve' },
+          ],
+        },
+      ],
+      phrase: '{extent} mucosal erythema, oedema and a coarse mucosal pattern were seen in the antrum, consistent with antral gastritis.',
+      impression: 'Antral gastritis ({extent})',
+      advice: [
+        'Record H. pylori status — rapid urease test, histology, stool antigen or urea breath test',
+        'Proton pump inhibitor for 4–8 weeks',
+        'Review NSAID, aspirin and alcohol use; consider dietary advice',
+      ],
+    },
+    {
+      id: 'antral_erosions',
+      label: 'Antral erosions',
+      severity: 'moderate',
+      tags: ['inflammatory'],
+      fields: [
+        { key: 'number', label: 'Number of erosions', type: 'text', required: true },
+        { key: 'bleeding', label: 'Stigmata of bleeding', type: 'select', required: true, options: [
+          { value: 'none', label: 'None' },
+          { value: 'haematin-covered bases', label: 'Haematin-covered bases' },
+          { value: 'active oozing', label: 'Active oozing' },
+        ] },
+      ],
+      phrase: '{number} erosions with {bleeding} were seen in the antrum, predominantly along the antral folds.',
+      impression: 'Antral erosions ({number} erosions, bleeding: {bleeding})',
+      advice: [
+        'Stop NSAIDs and aspirin where clinically possible',
+        'Full-dose proton pump inhibitor for 6–8 weeks',
+        'Test and treat H. pylori if positive',
+      ],
+    },
+    {
+      id: 'antral_ulcer',
+      label: 'Antral / pre-pyloric ulcer',
+      severity: 'severe',
+      tags: ['biopsy-required', 'bleeding-risk'],
+      biopsy: true,
+      fields: [
+        { key: 'site', label: 'Site', type: 'text', required: true },
+        ULCER_SIZE_FIELD,
+        { key: 'forrest', label: 'Forrest class', type: 'select', required: true, options: FORREST_OPTIONS },
+      ],
+      phrase: 'A gastric ulcer approximately {size} mm in diameter was seen at {site}, Forrest class {forrest}, with converging mucosal folds.',
+      impression: 'Gastric ulcer at {site}, about {size} mm (Forrest {forrest})',
+      advice: [
+        'Biopsy the ulcer edge and base to exclude malignancy',
+        'Repeat endoscopy at 6–8 weeks to confirm healing',
+        'Full-dose proton pump inhibitor for 8 weeks; test and treat H. pylori',
+      ],
+    },
+    {
+      id: 'antral_polyp',
+      label: 'Antral polyp(s)',
+      severity: 'moderate',
+      tags: ['polyp'],
+      fields: [
+        { key: 'number', label: 'Number', type: 'text', required: true },
+        { key: 'size', label: 'Largest size (mm)', type: 'number', required: true },
+        { key: 'resection', label: 'Management', type: 'select', required: true, options: [
+          { value: 'cold forceps biopsy avulsion', label: 'Cold forceps biopsy avulsion' },
+          { value: 'snare polypectomy', label: 'Snare polypectomy' },
+          { value: 'endoscopic mucosal resection (EMR)', label: 'Endoscopic mucosal resection (EMR)' },
+          { value: 'biopsied only', label: 'Biopsied only' },
+        ] },
+      ],
+      phrase: '{number} polyp(s) were seen in the antrum, the largest about {size} mm. Management: {resection}. The specimen was sent for histopathology.',
+      impression: 'Antral polyp(s) — {number} lesion(s), largest {size} mm',
+      advice: [
+        'Await histopathology; gastric adenomas need complete resection and 1-year surveillance',
+        'Biopsy the surrounding mucosa for atrophic gastritis and H. pylori',
+      ],
+    },
+    {
+      id: 'gave',
+      label: 'Gastric antral vascular ectasia (GAVE)',
+      severity: 'severe',
+      tags: ['bleeding-risk'],
+      fields: [
+        {
+          key: 'pattern',
+          label: 'Endoscopic pattern',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'longitudinal watermelon stripes radiating from the pylorus', label: 'Watermelon stripes' },
+            { value: 'diffuse punctate cherry-red spots', label: 'Diffuse punctate red spots' },
+          ],
+        },
+        {
+          key: 'bleeding',
+          label: 'Active bleeding',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'not actively bleeding but with oozing on contact', label: 'Oozing on contact' },
+            { value: 'actively bleeding', label: 'Actively bleeding' },
+            { value: 'no active bleeding', label: 'No active bleeding' },
+          ],
+        },
+      ],
+      phrase: '{pattern} were seen in the antrum, {bleeding}, consistent with gastric antral vascular ectasia.',
+      impression: 'Gastric antral vascular ectasia (GAVE) — a cause of chronic occult blood loss',
+      advice: [
+        'Check full blood count and iron studies; treat iron deficiency anaemia',
+        'Argon plasma coagulation (APC) in 2–4 week sessions until eradication',
+        'Look for associated conditions: cirrhosis, chronic kidney disease, systemic sclerosis, hypothyroidism',
+        'Avoid NSAIDs and anticoagulants where clinically possible',
+      ],
+    },
+    {
+      id: 'antral_deformity',
+      label: 'Antral deformity / scarring',
+      severity: 'moderate',
+      fields: [
+        {
+          key: 'pattern',
+          label: 'Pattern',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'antral narrowing with thickened, retracted folds', label: 'Antral narrowing with retracted folds' },
+            { value: 'hourglass deformity', label: 'Hourglass deformity' },
+            { value: 'shortened, tube-like antrum', label: 'Short, tube-like antrum' },
+          ],
+        },
+      ],
+      phrase: '{pattern} was seen, consistent with post-inflammatory scarring of the antrum.',
+      impression: 'Deformed / scarred antrum — sequela of previous ulceration',
+      advice: [
+        'Biopsy if malignancy or linitis plastica cannot be confidently excluded',
+        'Consider barium meal or CT if a motility disorder or infiltrative process is suspected',
+      ],
+    },
+    {
+      id: 'antral_mass',
+      label: 'Antral mass / suspected malignancy',
+      severity: 'critical',
+      tags: ['malignancy', 'biopsy-required'],
+      biopsy: true,
+      fields: [
+        { key: 'size', label: 'Approximate size (cm)', type: 'text', required: true },
+        { key: 'obstruction', label: 'Obstruction', type: 'select', required: true, options: [
+          { value: 'non-obstructing', label: 'Non-obstructing' },
+          { value: 'partially obstructing', label: 'Partially obstructing' },
+          { value: 'near-complete obstruction — scope could not be passed', label: 'Near complete — scope not passed' },
+        ] },
+      ],
+      phrase: 'An irregular, friable, ulcerated mass {size} in size was seen in the antrum, {obstruction}, with contact bleeding.',
+      impression: 'Antral mass — suspected gastric malignancy. Biopsies taken.',
+      advice: [
+        'Multiple biopsies (6–8) from the mass including the margins',
+        'Staging CT chest/abdomen/pelvis and EUS for T/N staging',
+        'Urgent upper GI multidisciplinary team referral',
+        'Consider nutritional support if there is gastric outlet obstruction',
+      ],
+    },
+    {
+      id: 'antrum_not_examined',
+      label: 'Not examined / not reached',
+      severity: 'unknown',
+      isNegative: true,
+      phrase: 'The antrum could not be adequately assessed.',
+      impression: null,
+      advice: [],
+    },
+  ],
+
+  /* ------------------------------------------------------------------ */
+  pylorus: [
+    {
+      id: 'normal_pylorus',
+      label: 'Normal pylorus',
+      severity: 'normal',
+      isNormal: true,
+      phrase: 'The pylorus was normal in appearance and opened and closed normally with antral peristalsis. The endoscope passed into the duodenum without resistance.',
+      impression: null,
+      advice: [],
+    },
+    {
+      id: 'pyloric_deformity',
+      label: 'Pyloric deformity / scarring',
+      severity: 'moderate',
+      fields: [
+        {
+          key: 'pattern',
+          label: 'Pattern',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'distorted and eccentric with a narrowed opening', label: 'Distorted and eccentric' },
+            { value: 'thickened, rigid pyloric ring', label: 'Thickened, rigid ring' },
+          ],
+        },
+        { key: 'traversable', label: 'Scope passed', type: 'select', required: true, options: [
+          { value: 'yes, without difficulty', label: 'Yes, without difficulty' },
+          { value: 'yes, with gentle pressure', label: 'Yes, with gentle pressure' },
+          { value: 'no', label: 'No' },
+        ] },
+      ],
+      phrase: 'The pylorus appeared {pattern}. The scope passed: {traversable}.',
+      impression: 'Pyloric deformity — {pattern}',
+      advice: [
+        'Biopsy if an infiltrative process (for example linitis plastica) cannot be excluded',
+        'Consider a gastric emptying study or barium meal if there are symptoms of gastroparesis',
+      ],
+    },
+    {
+      id: 'pyloric_stenosis',
+      label: 'Pyloric stenosis / gastric outlet obstruction',
+      severity: 'severe',
+      tags: ['obstructive'],
+      fields: [
+        { key: 'traversable', label: 'Scope passed into the duodenum', type: 'select', required: true, options: [
+          { value: 'yes — duodenum examined', label: 'Yes — duodenum examined' },
+          { value: 'no — examination ended at the pylorus', label: 'No — examination ended here' },
+        ] },
+        { key: 'cause', label: 'Suspected cause', type: 'select', required: true, options: [
+          { value: 'peptic (post-ulcer scarring)', label: 'Peptic / post-ulcer scarring' },
+          { value: 'malignant', label: 'Malignant' },
+          { value: 'unclear', label: 'Unclear' },
+        ] },
+      ],
+      phrase: 'There was marked narrowing of the pylorus with {cause} features. The scope passed: {traversable}.',
+      impression: 'Pyloric stenosis — suspected {cause}. Duodenum: {traversable}',
+      advice: [
+        'Multiple biopsies from the pyloric channel if malignancy is possible',
+        'Symptomatic treatment: nasogastric decompression and correction of electrolyte disturbance if vomiting',
+        'Consider balloon dilation or surgical/gastroenterological referral depending on the cause',
+        'CT or barium study to assess gastric emptying and exclude extrinsic disease',
+      ],
+    },
+    {
+      id: 'pylorus_spastic',
+      label: 'Spastic pylorus (no organic stenosis)',
+      severity: 'mild',
+      phrase: 'The pylorus was tightly closed at initial inspection but opened with peristalsis, and the endoscope passed without difficulty. There was no evidence of organic stenosis.',
+      impression: 'Spastic pylorus — no organic stenosis',
+      advice: [],
+    },
+    {
+      id: 'pylorus_not_examined',
+      label: 'Not examined / not reached',
+      severity: 'unknown',
+      isNegative: true,
+      phrase: 'The pylorus could not be adequately assessed.',
+      impression: null,
+      advice: [],
+    },
+  ],
+
+  /* ------------------------------------------------------------------ */
+  d1: [
+    {
+      id: 'normal_d1',
+      label: 'Normal duodenal bulb (D1)',
+      severity: 'normal',
+      isNormal: true,
+      phrase: 'The duodenal bulb was normal with a smooth, villous mucosa, no ulcer, erosion or deformity, and no narrowing.',
+      impression: null,
+      advice: [],
+    },
+    {
+      id: 'duodenitis',
+      label: 'Duodenitis / bulb mucosal inflammation',
+      severity: 'mild',
+      tags: ['inflammatory'],
+      fields: [
+        {
+          key: 'extent',
+          label: 'Extent',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'patchy erythema', label: 'Patchy erythema' },
+            { value: 'diffuse erythema with a coarse nodular pattern', label: 'Diffuse erythema with nodularity' },
+            { value: 'with erosions', label: 'With erosions' },
+          ],
+        },
+      ],
+      phrase: 'The duodenal bulb showed {extent}, consistent with duodenitis.',
+      impression: 'Duodenitis ({extent})',
+      advice: [
+        'Test and treat H. pylori — duodenitis is frequently associated with infection',
+        'Proton pump inhibitor for 4–8 weeks',
+        'Review NSAID and aspirin use',
+      ],
+    },
+    {
+      id: 'duodenal_ulcer',
+      label: 'Duodenal ulcer',
+      severity: 'severe',
+      tags: ['biopsy-consider', 'bleeding-risk'],
+      biopsy: true,
+      fields: [
+        { key: 'number', label: 'Number of ulcers', type: 'text', required: true },
+        ULCER_SIZE_FIELD,
+        { key: 'forrest', label: 'Forrest class', type: 'select', required: true, options: FORREST_OPTIONS },
+      ],
+      phrase: '{number} duodenal ulcer(s) were seen in the bulb, the largest approximately {size} mm, Forrest class {forrest}, with surrounding mucosal oedema and converging folds.',
+      impression: 'Duodenal ulcer ({number} ulcer(s), largest {size} mm, Forrest {forrest})',
+      advice: [
+        'Biopsy the duodenal ulcer if underlying malignancy or Crohn disease is possible',
+        'Full-dose proton pump inhibitor for 8 weeks',
+        'Test and eradicate H. pylori, then confirm eradication with a urea breath test or stool antigen at least 4 weeks later',
+        'Arrange urgent endoscopy if rebleeding occurs',
+      ],
+    },
+    {
+      id: 'bulb_deformity',
+      label: 'Deformed duodenal bulb (clover-leaf)',
+      severity: 'moderate',
+      phrase: 'The duodenal bulb was deformed with converging folds and a clover-leaf configuration, consistent with scarring from previous ulceration.',
+      impression: 'Deformed duodenal bulb — post-ulcer scarring',
+      advice: [
+        'Biopsy if there is any suspicion of an infiltrative or malignant process',
+        'Test and treat H. pylori',
+        'Consider barium meal if there are symptoms of gastric outlet obstruction',
+      ],
+    },
+    {
+      id: 'duodenal_erosions',
+      label: 'Duodenal erosions',
+      severity: 'moderate',
+      tags: ['inflammatory'],
+      phrase: 'Multiple superficial erosions were seen on the duodenal bulb mucosa with surrounding erythema and no active bleeding.',
+      impression: 'Duodenal erosions',
+      advice: ['Proton pump inhibitor for 6–8 weeks', 'Review NSAID and aspirin use', 'Test and treat H. pylori'],
+    },
+    {
+      id: 'duodenal_polyp_d1',
+      label: 'Duodenal polyp',
+      severity: 'moderate',
+      tags: ['polyp'],
+      fields: [
+        { key: 'size', label: 'Size (mm)', type: 'number', required: true },
+        { key: 'resection', label: 'Management', type: 'select', required: true, options: [
+          { value: 'cold forceps biopsy avulsion', label: 'Cold forceps biopsy avulsion' },
+          { value: 'snare polypectomy', label: 'Snare polypectomy' },
+          { value: 'endoscopic mucosal resection (EMR)', label: 'Endoscopic mucosal resection (EMR)' },
+          { value: 'biopsied only', label: 'Biopsied only' },
+        ] },
+      ],
+      phrase: 'A duodenal polyp about {size} mm in size was seen in the bulb. Management: {resection}. The specimen was sent for histopathology.',
+      impression: 'Duodenal polyp ({size} mm)',
+      advice: [
+        'Await histopathology — duodenal adenomas require complete resection and surveillance',
+        'Consider referral for EMR if the lesion is flat or larger than 10 mm',
+        'Consider screening for familial adenomatous polyposis if multiple duodenal adenomas are found',
+      ],
+    },
+    {
+      id: 'd1_not_examined',
+      label: 'Not examined / not reached',
+      severity: 'unknown',
+      isNegative: true,
+      phrase: 'The duodenal bulb could not be adequately assessed.',
+      impression: null,
+      advice: [],
+    },
+  ],
+
+  /* ------------------------------------------------------------------ */
+  d2: [
+    {
+      id: 'normal_d2',
+      label: 'Normal second part of duodenum (D2)',
+      severity: 'normal',
+      isNormal: true,
+      phrase: 'The second part of the duodenum was normal with a healthy villous pattern, a normal papilla and no ulcer, polyp or mass. The scope reached the D2 region and the extent of examination was documented.',
+      impression: null,
+      advice: [],
+    },
+    {
+      id: 'd2_ulcer',
+      label: 'D2 ulcer',
+      severity: 'severe',
+      tags: ['biopsy-consider', 'bleeding-risk'],
+      biopsy: true,
+      fields: [
+        ULCER_SIZE_FIELD,
+        { key: 'forrest', label: 'Forrest class', type: 'select', required: true, options: FORREST_OPTIONS },
+        { key: 'relation_to_papilla', label: 'Relation to the papilla', type: 'text', required: false },
+      ],
+      phrase: 'An ulcer approximately {size} mm in size was seen in the second part of the duodenum, {relation_to_papilla}, Forrest class {forrest}.',
+      impression: 'Duodenal ulcer in D2 ({size} mm, Forrest {forrest})',
+      advice: [
+        'Biopsy to exclude malignancy or Crohn disease',
+        'Full-dose proton pump inhibitor for 8 weeks',
+        'Test and eradicate H. pylori',
+        'Consider Zollinger–Ellison syndrome if the ulcer is refractory, multiple or distal to the bulb',
+      ],
+    },
+    {
+      id: 'duodenal_polyp_d2',
+      label: 'Duodenal polyp / adenoma in D2',
+      severity: 'moderate',
+      tags: ['polyp'],
+      fields: [
+        { key: 'size', label: 'Size (mm)', type: 'number', required: true },
+        { key: 'relation_to_papilla', label: 'Relation to the papilla', type: 'text', required: true },
+        { key: 'resection', label: 'Management', type: 'select', required: true, options: [
+          { value: 'cold forceps biopsy avulsion', label: 'Cold forceps biopsy avulsion' },
+          { value: 'snare polypectomy', label: 'Snare polypectomy' },
+          { value: 'endoscopic mucosal resection (EMR)', label: 'Endoscopic mucosal resection (EMR)' },
+          { value: 'left in situ — referred for EMR/ESD', label: 'Left in situ — referred for EMR/ESD' },
+          { value: 'biopsied only', label: 'Biopsied only' },
+        ] },
+      ],
+      phrase: 'A duodenal polyp approximately {size} mm in size was seen in D2, {relation_to_papilla}. Management: {resection}.',
+      impression: 'Duodenal polyp in D2 ({size} mm) — {relation_to_papilla}',
+      advice: [
+        'Await histopathology — duodenal adenomas require complete resection and endoscopic surveillance',
+        'Lesions near or involving the papilla should be managed in a specialist centre',
+        'Consider genetics referral and colonoscopy if multiple adenomas suggest familial adenomatous polyposis',
+      ],
+    },
+    {
+      id: 'papilla_abnormal',
+      label: 'Abnormal papilla',
+      severity: 'moderate',
+      tags: ['biopsy-consider'],
+      biopsy: true,
+      fields: [
+        {
+          key: 'appearance',
+          label: 'Appearance',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'enlarged and bulging with a nodular surface', label: 'Enlarged and bulging' },
+            { value: 'with a patulous, gaping orifice', label: 'Patulous / gaping orifice' },
+            { value: 'with a periampullary mass or ulceration', label: 'Periampullary mass or ulceration' },
+            { value: 'with bile staining only', label: 'Bile staining only' },
+          ],
+        },
+      ],
+      phrase: 'The papilla of Vater appeared {appearance}.',
+      impression: 'Abnormal appearing duodenal papilla — {appearance}',
+      advice: [
+        'Biopsy the periampullary region if a neoplastic process is suspected',
+        'MRCP or EUS to assess the pancreaticobiliary tree',
+        'Check liver function tests and consider referral to a pancreatobiliary service',
+      ],
+    },
+    {
+      id: 'celiac_pattern',
+      label: 'Malabsorption pattern (scalloping / mosaic)',
+      severity: 'moderate',
+      tags: ['biopsy-required'],
+      biopsy: true,
+      fields: [
+        {
+          key: 'pattern',
+          label: 'Pattern seen',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'scalloping of the duodenal folds', label: 'Scalloping of the folds' },
+            { value: 'a mosaic / cracked-mud mucosal pattern', label: 'Mosaic / cracked-mud pattern' },
+            { value: 'reduced or absent duodenal folds', label: 'Reduced or absent folds' },
+            { value: 'scalloping with a mosaic pattern', label: 'Scalloping with mosaic pattern' },
+          ],
+        },
+      ],
+      phrase: 'The duodenal mucosa in D2 showed {pattern} with a reduced villous appearance, raising the possibility of coeliac disease.',
+      impression: 'Duodenal mucosal changes consistent with coeliac disease ({pattern})',
+      advice: [
+        'Duodenal biopsies: at least four from D2 including the bulb, taken while the patient is still on a gluten-containing diet',
+        'Serology: anti-tTG IgA with total IgA',
+        'Do not start a gluten-free diet before the biopsy and serology are complete',
+        'Check iron, folate, vitamin B12, calcium and vitamin D levels',
+      ],
+    },
+    {
+      id: 'duodenal_diverticulum',
+      label: 'Duodenal diverticulum',
+      severity: 'mild',
+      fields: [
+        { key: 'site', label: 'Site', type: 'text', required: true },
+      ],
+      phrase: 'A duodenal diverticulum was seen at {site} with a wide neck and normal surrounding mucosa. Food debris was present within it.',
+      impression: 'Duodenal diverticulum at {site} (incidental)',
+      advice: [
+        'Usually incidental and requires no treatment',
+        'Consider evaluation for small bowel bacterial overgrowth if the patient has bloating, diarrhoea or malabsorption',
+      ],
+    },
+    {
+      id: 'worm_infestation',
+      label: 'Worm infestation (e.g. ascariasis)',
+      severity: 'moderate',
+      tags: ['infective'],
+      fields: [
+        {
+          key: 'appearance',
+          label: 'Appearance',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'live, motile roundworms', label: 'Live motile roundworms' },
+            { value: 'dead or fragmented worms', label: 'Dead / fragmented worms' },
+          ],
+        },
+      ],
+      phrase: '{appearance} were seen within the duodenal lumen, consistent with ascariasis.',
+      impression: 'Duodenal worm infestation (ascariasis)',
+      advice: [
+        'Anthelmintic treatment: albendazole 400 mg single dose (or mebendazole 100 mg twice daily for 3 days)',
+        'Consider repeating the stool examination for ova and parasites',
+        'Check haemoglobin and treat anaemia; consider family screening and hygiene advice',
+      ],
+    },
+    {
+      id: 'duodenal_mass',
+      label: 'Duodenal mass / suspected malignancy',
+      severity: 'critical',
+      tags: ['malignancy', 'biopsy-required'],
+      biopsy: true,
+      fields: [
+        { key: 'size', label: 'Approximate size (cm)', type: 'text', required: true },
+        { key: 'site', label: 'Site within D2', type: 'text', required: true },
+      ],
+      phrase: 'An irregular, friable mass {size} in size was seen at {site} in D2, with contact bleeding.',
+      impression: 'Duodenal mass at {site} — suspected malignancy. Biopsies taken.',
+      advice: [
+        'Multiple biopsies (6–8) from the mass and the margins',
+        'Cross-sectional imaging (CT/MRI) and EUS for staging',
+        'Urgent referral to the upper GI / pancreatobiliary multidisciplinary team',
+      ],
+    },
+    {
+      id: 'd2_not_examined',
+      label: 'Not examined / not reached',
+      severity: 'unknown',
+      isNegative: true,
+      phrase: 'The second part of the duodenum could not be adequately assessed.',
+      impression: null,
+      advice: [],
+    },
+  ],
+}
