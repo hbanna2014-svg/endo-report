@@ -53,7 +53,16 @@ body {
   font-family: var(--font);
   font-size: 14px;
   color: var(--ink);
-  background: var(--bg);
+  /* A soft four-colour wash: blue in the top-left, violet top-right, teal
+     bottom-right, over a neutral base so text contrast never suffers. */
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(760px 560px at 34% 6%, #b9d4ff 0%, rgba(185, 212, 255, 0) 72%),
+    radial-gradient(780px 560px at 94% 10%, #d2bfff 0%, rgba(210, 191, 255, 0) 70%),
+    radial-gradient(940px 660px at 82% 94%, #9fe9d9 0%, rgba(159, 233, 217, 0) 72%),
+    radial-gradient(700px 500px at 46% 98%, #ffc9d4 0%, rgba(255, 201, 212, 0) 70%),
+    linear-gradient(160deg, #e6efff 0%, #f0eaff 48%, #e6f8f2 100%);
+  background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -72,7 +81,10 @@ a { color: var(--brand); }
 .app.no-nav { grid-template-columns: 1fr; }
 
 .nav {
-  background: linear-gradient(180deg, var(--nav) 0%, #0b1425 100%);
+  background:
+    radial-gradient(420px 220px at 50% -70px, rgba(37, 99, 235, .45), transparent 72%),
+    radial-gradient(320px 200px at 0% 100%, rgba(13, 148, 136, .28), transparent 70%),
+    linear-gradient(180deg, #17243f 0%, #101a2e 58%, #0b1425 100%);
   color: var(--nav-ink);
   display: flex; flex-direction: column;
   padding: 14px 12px;
@@ -108,7 +120,9 @@ a { color: var(--brand); }
 
 .topbar {
   height: 58px; flex: 0 0 58px;
-  background: var(--surface); border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, .84);
+  backdrop-filter: blur(10px) saturate(1.2);
+  border-bottom: 1px solid rgba(226, 232, 240, .92);
   display: flex; align-items: center; gap: 14px; padding: 0 20px;
   box-shadow: var(--shadow-1); z-index: 5;
 }

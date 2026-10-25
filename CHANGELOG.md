@@ -4,6 +4,15 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.4 — 2026-10-26
+
+### Changed
+
+- **Colourful desktop background.** The flat grey canvas is replaced by a soft four-colour wash
+  (blue, violet, teal, rose) that stays behind the content, with a frosted top bar and a deeper
+  navigation panel carrying a faint blue/teal bloom.
+- Cards, tables and the report sheet stay pure white so contrast and print output are unaffected.
+
 ## 0.5.3 — 2026-10-25
 
 ### Changed
