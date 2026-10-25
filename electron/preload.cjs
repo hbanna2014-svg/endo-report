@@ -69,6 +69,8 @@ contextBridge.exposeInMainWorld('endoreport', {
     list: (activeOnly) => invoke('doctors:list', activeOnly),
     save: (doctor) => invoke('doctors:save', doctor),
     remove: (id) => invoke('doctors:remove', id),
+    setSeal: (id, bytes) => invoke('doctors:setSeal', id, bytes),
+    sealDataUrl: (id) => invoke('doctors:sealDataUrl', id),
   },
 
   templates: {

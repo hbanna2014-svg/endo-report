@@ -946,6 +946,24 @@ function registerIpc() {
   handle('doctors:save', (doctor) => db.saveDoctor(doctor))
   handle('doctors:remove', (id) => db.deleteDoctor(id))
 
+  /* A doctor's signature stamp, stored once and reused on every report. */
+  handle('doctors:setSeal', async (doctorId, bytes) => {
+    if (!doctorId) throw new Error('Choose a doctor first.')
+    const buffer = Buffer.from(bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes)
+    if (!buffer.length) throw new Error('The stamp image is empty.')
+    if (buffer.length > 8 * 1024 * 1024) throw new Error('The stamp image is larger than 8 MB.')
+    const file = await db.setDoctorSeal(dataDir, doctorId, buffer, 'png')
+    return { ok: true, path: file }
+  })
+
+  handle('doctors:sealDataUrl', async (doctorId) => {
+    const doctors = await db.listDoctors()
+    const doctor = doctors.find((d) => d.id === doctorId)
+    if (!doctor?.sealPath || !fs.existsSync(doctor.sealPath)) return { dataUrl: '' }
+    const buf = fs.readFileSync(doctor.sealPath)
+    return { dataUrl: `data:image/png;base64,${buf.toString('base64')}` }
+  })
+
   /* Open a Word report and hand back editable HTML ------------------------ */
   handle('docx:pickHtml', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {

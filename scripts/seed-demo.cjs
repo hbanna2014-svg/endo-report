@@ -100,9 +100,23 @@ async function run() {
   })
 
   for (const d of [
-    { name: 'Dr. B. Hossain', designation: 'Consultant Gastroenterologist', role: 'endoscopist', regNo: 'BMDC-A-12345' },
+    {
+      name: 'Dr. B. Hossain',
+      designation: 'Consultant Gastroenterologist',
+      degrees: 'MBBS, FCPS (Medicine), MD (Gastroenterology)',
+      affiliation: 'Ibn Sina Medical College & Hospital',
+      role: 'endoscopist',
+      regNo: 'BMDC-A-12345',
+      isDefault: true,
+    },
     { name: 'Dr. A. Rahman', designation: 'Consultant Physician', role: 'referrer' },
-    { name: 'Dr. S. Akter', designation: 'Registrar, Gastroenterology', role: 'endoscopist' },
+    {
+      name: 'Dr. S. Akter',
+      designation: 'Registrar, Gastroenterology',
+      degrees: 'MBBS, MD (Gastroenterology)',
+      affiliation: 'Ibn Sina Medical College & Hospital',
+      role: 'endoscopist',
+    },
     { name: 'Nurse F. Begum', designation: 'Endoscopy nurse', role: 'assistant' },
   ]) {
     // eslint-disable-next-line no-await-in-loop

@@ -15,7 +15,7 @@ const crypto = require('node:crypto')
  * Bump this whenever the schema changes and add a matching entry to MIGRATIONS.
  * Existing clinics are upgraded in place; their data is never recreated.
  */
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 
 /**
  * Ordered, idempotent schema migrations. Each entry moves a database from
@@ -45,6 +45,16 @@ const MIGRATIONS = [
       await db.exec(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS identity_no TEXT`)
       await db.exec(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS visit_id TEXT`)
       await db.exec(`CREATE INDEX IF NOT EXISTS idx_patients_identity ON patients(identity_no)`)
+    },
+  },
+  {
+    to: 4,
+    name: 'doctor signature seals',
+    up: async (db) => {
+      await db.exec(`ALTER TABLE doctors ADD COLUMN IF NOT EXISTS degrees TEXT`)
+      await db.exec(`ALTER TABLE doctors ADD COLUMN IF NOT EXISTS affiliation TEXT`)
+      await db.exec(`ALTER TABLE doctors ADD COLUMN IF NOT EXISTS seal_path TEXT`)
+      await db.exec(`ALTER TABLE doctors ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT false`)
     },
   },
 ]
@@ -126,6 +136,10 @@ CREATE TABLE IF NOT EXISTS doctors (
   role TEXT DEFAULT 'endoscopist',
   reg_no TEXT,
   phone TEXT,
+  degrees TEXT,
+  affiliation TEXT,
+  seal_path TEXT,
+  is_default BOOLEAN NOT NULL DEFAULT false,
   active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -620,6 +634,10 @@ async function listDoctors(activeOnly = false) {
     role: r.role,
     regNo: r.reg_no,
     phone: r.phone,
+    degrees: r.degrees,
+    affiliation: r.affiliation,
+    sealPath: r.seal_path,
+    isDefault: r.is_default,
     active: r.active,
   }))
 }
@@ -627,18 +645,59 @@ async function listDoctors(activeOnly = false) {
 async function saveDoctor(d) {
   const id = d.id || newId()
   const existing = await q(`SELECT id FROM doctors WHERE id = $1`, [id])
+  if (d.isDefault) await q(`UPDATE doctors SET is_default = false`)
+  const params = [
+    id,
+    d.name,
+    d.designation || null,
+    d.role || 'endoscopist',
+    d.regNo || null,
+    d.phone || null,
+    d.degrees || null,
+    d.affiliation || null,
+    d.sealPath || null,
+    !!d.isDefault,
+    d.active !== false,
+  ]
   if (existing.length) {
     await q(
-      `UPDATE doctors SET name=$2, designation=$3, role=$4, reg_no=$5, phone=$6, active=$7 WHERE id=$1`,
-      [id, d.name, d.designation || null, d.role || 'endoscopist', d.regNo || null, d.phone || null, d.active !== false],
+      `UPDATE doctors SET name=$2, designation=$3, role=$4, reg_no=$5, phone=$6,
+         degrees=$7, affiliation=$8, seal_path=$9, is_default=$10, active=$11
+       WHERE id=$1`,
+      params,
     )
   } else {
     await q(
-      `INSERT INTO doctors (id, name, designation, role, reg_no, phone, active) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [id, d.name, d.designation || null, d.role || 'endoscopist', d.regNo || null, d.phone || null, d.active !== false],
+      `INSERT INTO doctors (id, name, designation, role, reg_no, phone, degrees, affiliation, seal_path, is_default, active)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      params,
     )
   }
-  return { ...d, id }
+  const rows = await q(`SELECT * FROM doctors WHERE id = $1`, [id])
+  const r = rows[0]
+  return {
+    id: r.id,
+    name: r.name,
+    designation: r.designation,
+    role: r.role,
+    regNo: r.reg_no,
+    phone: r.phone,
+    degrees: r.degrees,
+    affiliation: r.affiliation,
+    sealPath: r.seal_path,
+    isDefault: r.is_default,
+    active: r.active,
+  }
+}
+
+/** Stores the uploaded stamp image and points the doctor record at it. */
+async function setDoctorSeal(dataDir, id, buffer, ext) {
+  const dir = path.join(dataDir, 'seals')
+  fs.mkdirSync(dir, { recursive: true })
+  const file = path.join(dir, `${id}.${ext}`)
+  fs.writeFileSync(file, buffer)
+  await q(`UPDATE doctors SET seal_path = $2 WHERE id = $1`, [id, file])
+  return file
 }
 
 async function deleteDoctor(id) {
@@ -763,6 +822,7 @@ module.exports = {
   listDoctors,
   saveDoctor,
   deleteDoctor,
+  setDoctorSeal,
   listTemplates,
   saveTemplate,
   deleteTemplate,

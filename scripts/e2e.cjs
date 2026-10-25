@@ -172,8 +172,26 @@ async function run() {
   check('the converted report keeps the findings text', /Impression|FINDINGS|Findings/i.test(String(converted.html)))
 
   console.log('\n--- 6. Doctors, templates and settings ---')
-  const doc = await db.saveDoctor({ name: 'Dr. Test Endoscopist', designation: 'Consultant', role: 'endoscopist' })
+  const doc = await db.saveDoctor({
+    name: 'Dr. Test Endoscopist',
+    designation: 'Consultant',
+    degrees: 'MBBS, MD (Gastro)',
+    affiliation: 'Test Medical College',
+    role: 'endoscopist',
+    isDefault: true,
+  })
   check('doctor saved', !!doc.id && (await db.listDoctors()).length === 1)
+  check('doctor degrees and affiliation stored', doc.degrees === 'MBBS, MD (Gastro)' && doc.affiliation === 'Test Medical College')
+  check('doctor marked as default', doc.isDefault === true)
+
+  const sealFile = await db.setDoctorSeal(dataDir, doc.id, Buffer.from('89504e470d0a1a0a', 'hex'), 'png')
+  check('doctor seal written to disk', fs.existsSync(sealFile))
+  const withSeal = (await db.listDoctors()).find((d) => d.id === doc.id)
+  check('doctor seal path persisted', withSeal.sealPath === sealFile)
+  const second = await db.saveDoctor({ name: 'Dr. Second', role: 'endoscopist', isDefault: true })
+  const defaults = (await db.listDoctors()).filter((d) => d.isDefault)
+  check('only one doctor is the default', defaults.length === 1 && defaults[0].id === second.id)
+  await db.deleteDoctor(second.id)
 
   const { DEFAULT_TEMPLATE } = await esmImport('src/lib/reportModel.js')
   const tpl = await db.saveTemplate({ ...DEFAULT_TEMPLATE, id: null, isDefault: true })
@@ -255,6 +273,10 @@ async function run() {
   const patientCols = await db.q(`SELECT column_name FROM information_schema.columns WHERE table_name = 'patients'`)
   check('patients.identity_no added by migration 3', patientCols.some((c) => c.column_name === 'identity_no'))
   check('patients.visit_id added by migration 3', patientCols.some((c) => c.column_name === 'visit_id'))
+
+  const doctorCols = await db.q(`SELECT column_name FROM information_schema.columns WHERE table_name = 'doctors'`)
+  check('doctors.seal_path added by migration 4', doctorCols.some((c) => c.column_name === 'seal_path'))
+  check('doctors.is_default added by migration 4', doctorCols.some((c) => c.column_name === 'is_default'))
 
   const stillThere = await db.listProcedures({ patientId: patient.id })
   check('records survive the migration', stillThere.length === 1, `${stillThere.length} found`)

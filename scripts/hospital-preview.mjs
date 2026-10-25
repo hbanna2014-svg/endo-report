@@ -14,7 +14,7 @@ import { createRequire } from 'node:module'
 
 import { buildReportModel, DEFAULT_TEMPLATE } from '../src/lib/reportModel.js'
 import { emptyProcedure } from '../src/lib/autoReport.js'
-import { buildPrintHtml } from '../src/lib/printHtml.js'
+import { buildPrintHtml, buildImagePlusHtml } from '../src/lib/printHtml.js'
 
 const require = createRequire(import.meta.url)
 const docx = require('../electron/docx.cjs')
@@ -158,6 +158,14 @@ fs.mkdirSync(outDir, { recursive: true })
 
 const html = buildPrintHtml(model)
 fs.writeFileSync(path.join(outDir, 'hospital.html'), html, 'utf8')
+
+// Image Plus: pictures only, six to a sheet.
+const mediaWithData = media.map((m) => ({ ...m, dataUrl: m.dataUrl }))
+fs.writeFileSync(
+  path.join(outDir, 'imageplus.html'),
+  buildImagePlusHtml({ ...model, media: mediaWithData }, { count: 6, images: mediaWithData }),
+  'utf8',
+)
 
 const docxPath = path.join(outDir, 'hospital.docx')
 await docx.saveDocx(model, docxPath)

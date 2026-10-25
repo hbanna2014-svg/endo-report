@@ -4,6 +4,51 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.0 — 2026-10-25
+
+**Theme: the sheet matches the paper form exactly, and the doctor's seal is one click away.**
+
+### Page geometry
+
+- A **border around the whole sheet**, top and bottom, as on the printed form.
+- Pictures are exactly **2.2 in × 2 in** (55.88 mm × 50.8 mm): three across the top, and the
+  right-hand column runs **to the bottom border** with four frames.
+- The on-screen sheet is now laid out at true A4 geometry (793.7 × 1122.5 px) and scaled with a
+  CSS transform, so the console preview, the full report and the printed page share one
+  geometry instead of three approximations.
+- The Word export mirrors the same geometry: bordered frame, 2.2 × 2 in pictures, four-frame
+  column to the foot of the page.
+
+### Doctor signature seals
+
+- Doctors gain **degrees**, **affiliation**, a **signature stamp image** and a **default** flag
+  (schema v4).
+- **Settings ▸ Doctors** uploads the stamp (normalised to PNG) and warns when no doctor is
+  marked default.
+- The report screen has a **Signature & seal** selector that fills the name, degrees,
+  designation, affiliation and stamp in one click. Reports that only carry a doctor's name are
+  matched to the record automatically; new reports start with the default endoscopist.
+- The stamp prints above the signature rule in the preview, the PDF and the `.docx`.
+
+### Image Plus
+
+- **Print pictures only** prints the hospital header, the patient particulars and **4 or 6
+  pictures** at 2.2 × 2 in — no findings, no report text.
+- The picture-only sheet carries the same border and letterhead as the report.
+
+### Fixes
+
+- The picture-plate selector now offers the seven-picture hospital layout (it previously fell
+  back to the first option).
+- `api.patients.update` is exposed, so in-place edits on the report sheet persist.
+
+### Database
+
+Schema v3 → v4: `doctors.degrees`, `doctors.affiliation`, `doctors.seal_path`,
+`doctors.is_default`. Existing records are preserved; the database is copied before the upgrade.
+
+---
+
 ## 0.4.0 — 2026-10-25
 
 **Theme: the report now prints on the unit's own paper form.**

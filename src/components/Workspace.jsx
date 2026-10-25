@@ -35,7 +35,7 @@ import { api, mediaSrc, newUid } from '../lib/api.js'
 import { analyse, emptyProcedure, findingsForSection, findFindingDef } from '../lib/autoReport.js'
 import { sectionsForProcedure, PROCEDURE_TYPES } from '../lib/anatomy.js'
 import { buildReportModel, renderPlainText, imageLayoutDef } from '../lib/reportModel.js'
-import { buildPrintHtml } from '../lib/printHtml.js'
+import { buildPrintHtml, buildImagePlusHtml } from '../lib/printHtml.js'
 import useCapture, { fmtDuration } from '../lib/useCapture.js'
 
 import FindingsPanel from './FindingsPanel.jsx'
@@ -56,6 +56,7 @@ import {
   Empty,
   Modal,
   ProcedureChip,
+  Select,
   useToast,
 } from './ui.jsx'
 
@@ -94,6 +95,8 @@ export default function Workspace({
   const [savedAt, setSavedAt] = useState(null)
   const [busy, setBusy] = useState(false)
   const [imagePlus, setImagePlus] = useState(false)
+  const [sealUrl, setSealUrl] = useState('')
+  const [picturePrint, setPicturePrint] = useState(null) // 4 | 6 | null
   const [confirmFinal, setConfirmFinal] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
   const [aiBusy, setAiBusy] = useState(false)
@@ -257,8 +260,71 @@ export default function Workspace({
     if (!procedure || !patient || !analysis) return null
     // `media` lives in its own state (it changes on every capture) so it is
     // injected here — this is what keeps the report plate and the rail in sync.
-    return buildReportModel(patient, { ...procedure, media }, mergedTemplate)
-  }, [procedure, patient, media, mergedTemplate, analysis])
+    return buildReportModel(patient, { ...procedure, media }, mergedTemplate, { sealDataUrl: sealUrl })
+  }, [procedure, patient, media, mergedTemplate, analysis, sealUrl])
+
+  const endoscopists = useMemo(
+    () => (doctors || []).filter((d) => d.active !== false && (!d.role || d.role === 'endoscopist')),
+    [doctors],
+  )
+
+  const applyDoctor = useCallback(
+    async (doctorId) => {
+      const d = (doctors || []).find((x) => x.id === doctorId)
+      patch({
+        performingDoctorId: doctorId || '',
+        performingDoctor: d?.name || '',
+        performingDoctorDegrees: d?.degrees || '',
+        performingDoctorDesignation: d?.designation || '',
+        performingDoctorAffiliation: d?.affiliation || '',
+        performingDoctorSealPath: d?.sealPath || '',
+      })
+      if (!doctorId) {
+        setSealUrl('')
+        return
+      }
+      try {
+        const res = await api.doctors.sealDataUrl(doctorId)
+        setSealUrl(res?.dataUrl || '')
+      } catch {
+        setSealUrl('')
+      }
+    },
+    [doctors, patch],
+  )
+
+  // Link the report to a doctor record so the seal and degrees appear:
+  //   1. an explicit id already on the report wins;
+  //   2. otherwise match the stored name (older reports only carry a name);
+  //   3. otherwise fall back to the default endoscopist.
+  useEffect(() => {
+    if (!procedure || procedure.performingDoctorId) return
+    const byName = (doctors || []).find((d) => d.name === procedure.performingDoctor)
+    if (byName) {
+      applyDoctor(byName.id)
+      return
+    }
+    if (procedure.performingDoctor) return
+    const preferred = (doctors || []).find((d) => d.isDefault && d.active !== false) || endoscopists[0]
+    if (preferred) applyDoctor(preferred.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [procedure?.id, doctors])
+
+  useEffect(() => {
+    const id = procedure?.performingDoctorId
+    if (!id) {
+      setSealUrl('')
+      return
+    }
+    let alive = true
+    api.doctors
+      .sealDataUrl(id)
+      .then((res) => alive && setSealUrl(res?.dataUrl || ''))
+      .catch(() => alive && setSealUrl(''))
+    return () => {
+      alive = false
+    }
+  }, [procedure?.performingDoctorId])
 
   const slotIds = useMemo(
     () => (model?.imagePlan?.slots || []).map((s) => s.id),
@@ -511,6 +577,26 @@ export default function Workspace({
       setBusy(false)
     }
   }, [model, media, save, toast])
+
+  /** "Image Plus" print: particulars and pictures, no report text. */
+  const printPictures = useCallback(
+    async (count) => {
+      if (!model) return
+      setBusy(true)
+      try {
+        const enriched = await withImages()
+        const html = buildImagePlusHtml({ ...model, media: enriched }, { count, images: enriched })
+        const res = await api.report.print(html, `Image Plus — ${model.patientLine.name}`)
+        if (res?.ok === false && res.reason) toast.push({ tone: 'warn', title: 'Printing cancelled', body: res.reason })
+        else setPicturePrint(null)
+      } catch (err) {
+        toast.push({ tone: 'err', title: 'Printing failed', body: err.message })
+      } finally {
+        setBusy(false)
+      }
+    },
+    [model, toast, withImages],
+  )
 
   const doPdf = useCallback(async () => {
     if (!model) return
@@ -934,6 +1020,23 @@ export default function Workspace({
                   />
                 </div>
 
+                <div className="report-sign-row">
+                  <span className="tiny muted">Signature &amp; seal</span>
+                  <Select
+                    value={procedure.performingDoctorId || ''}
+                    onChange={(e) => applyDoctor(e.target.value)}
+                    options={[
+                      { value: '', label: '— none —' },
+                      ...endoscopists.map((d) => ({ value: d.id, label: d.name })),
+                    ]}
+                    style={{ maxWidth: 210 }}
+                  />
+                  {sealUrl ? <img className="doctor-seal-thumb" src={sealUrl} alt="seal" /> : null}
+                  <Button size="sm" icon={Printer} onClick={() => setPicturePrint(4)}>
+                    Print pictures only
+                  </Button>
+                </div>
+
                 <div className="report-scroll">
                   <ReportView
                     model={model}
@@ -991,6 +1094,47 @@ export default function Workspace({
         live={cap.live}
         busy={busy}
       />
+
+      <Modal
+        open={!!picturePrint}
+        onClose={() => setPicturePrint(null)}
+        width={520}
+        title="Print pictures only"
+        footer={
+          <>
+            <Button onClick={() => setPicturePrint(null)}>Cancel</Button>
+            <Button variant="primary" icon={Printer} onClick={() => printPictures(picturePrint)} disabled={busy}>
+              Print {picturePrint || ''} picture{(picturePrint || 0) === 1 ? '' : 's'}
+            </Button>
+          </>
+        }
+      >
+        <p className="tiny muted" style={{ marginTop: 0 }}>
+          Prints the hospital header, the patient particulars and the pictures — no findings, no report text.
+          This is the "Image Plus" sheet.
+        </p>
+        <div className="grid c2" style={{ marginTop: 10 }}>
+          <button
+            type="button"
+            className={`style-option${picturePrint === 4 ? ' on' : ''}`}
+            onClick={() => setPicturePrint(4)}
+          >
+            <strong>4 pictures</strong>
+            <span className="tiny muted">Two rows of two, at 2.2" × 2"</span>
+          </button>
+          <button
+            type="button"
+            className={`style-option${picturePrint === 6 ? ' on' : ''}`}
+            onClick={() => setPicturePrint(6)}
+          >
+            <strong>6 pictures</strong>
+            <span className="tiny muted">Three rows of two, at 2.2" × 2"</span>
+          </button>
+        </div>
+        <p className="tiny muted" style={{ marginTop: 10 }}>
+          {media.filter((m) => m.kind === 'image').length} picture(s) captured for this patient.
+        </p>
+      </Modal>
 
       <PicturePicker
         open={!!picker}

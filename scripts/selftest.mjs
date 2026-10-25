@@ -10,7 +10,7 @@ import path from 'node:path'
 
 import { analyse, emptyProcedure, findingsForSection } from '../src/lib/autoReport.js'
 import { buildImagePlan, buildReportModel, imageLayoutDef, renderPlainText, DEFAULT_TEMPLATE, buildHospitalForm } from '../src/lib/reportModel.js'
-import { buildPrintHtml } from '../src/lib/printHtml.js'
+import { buildPrintHtml, buildImagePlusHtml } from '../src/lib/printHtml.js'
 import { sectionsForProcedure } from '../src/lib/anatomy.js'
 
 const require = createRequire(import.meta.url)
@@ -439,6 +439,18 @@ check('biopsy row says not taken', form.findings.find((f) => f.heading === 'Biop
 check('picture plate holds seven slots', hModel.imagePlan.capacity === 7)
 
 const hHtml = buildPrintHtml(hModel)
+check('report page is bordered', hHtml.includes('border: 1.2px solid #000') && hHtml.includes('class="frame"'))
+check('pictures are 2.2in x 2in', hHtml.includes('grid-template-columns: repeat(3, 55.88mm)') && hHtml.includes('height: 50.8mm'))
+check('the right-hand picture column reaches the bottom', hHtml.includes('class="side4"') && hHtml.includes('justify-content: space-between'))
+const sealedModel = buildReportModel(hospitalPatient, hospitalProcedure, hospitalTemplate, {
+  sealDataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+})
+check('the doctor seal reaches the model', sealedModel.hospital.signature.sealDataUrl.startsWith('data:image/png'))
+check('the signature stamp is printed when present', buildPrintHtml(sealedModel).includes('class="seal"'))
+const imagePlus = buildImagePlusHtml(hModel, { count: 6 })
+check('the Image Plus sheet prints six pictures', (imagePlus.match(/<figure>/g) || []).length === 6)
+check('the Image Plus sheet carries no findings', !imagePlus.includes('FINDINGS'))
+check('the Image Plus sheet keeps the patient particulars', imagePlus.includes('C1853940') && imagePlus.includes('SAROWER HOSSAIN'))
 check('hospital print HTML is produced', hHtml.includes('ENDOSCOPIC PROCEDURE REPORT'))
 check('print HTML prints the hospital name', hHtml.includes('IBN SINA MEDICAL COLLEGE HOSPITAL'))
 check('print HTML prints identity numbers', hHtml.includes('C1853940'))

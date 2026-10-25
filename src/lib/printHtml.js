@@ -372,10 +372,7 @@ export function buildHospitalPrintHtml(model) {
     .join('')
 
   const findings = f.findings
-    .map(
-      (b) =>
-        `<p class="fb"><b><i>${esc(b.heading)}:-</i></b> ${esc(b.text)}</p>`,
-    )
+    .map((b) => `<p class="fb"><b><i>${esc(b.heading)}:-</i></b> ${esc(b.text)}</p>`)
     .join('')
 
   const comments = f.comments.length
@@ -393,28 +390,9 @@ export function buildHospitalPrintHtml(model) {
     </div>
     <table class="pgrid">${grid}</table>`
 
-  const sideFigures = f.side.map((m) => figure(m, 'side')).join('')
-
-  /* Optional trailing picture sheet: six frames on a 2 x 3 plate. */
-  let extraSheets = ''
-  if (layout.extraImageSheet) {
-    const all = (model.media || []).filter((m) => m.kind === 'image')
-    for (let i = 0; i < all.length; i += 6) {
-      const chunk = all.slice(i, i + 6)
-      extraSheets += `<div class="sheet">
-        ${header}
-        <div class="band"><h1>${esc(f.title)}</h1></div>
-        <div class="plus-row">
-          ${[1, 2, 3, 4, 6].map((n) => `<span class="plus"><i class="${n === 6 ? 'on' : ''}"></i> Image Plus ${n}</span>`).join('')}
-        </div>
-        <div class="plate6">
-          ${Array.from({ length: 6 })
-            .map((_, k) => (chunk[k] ? figure({ ...chunk[k], dataUrl: chunk[k].dataUrl }) : `<figure class="empty"><div class="noimg">No Preview Available</div></figure>`))
-            .join('')}
-        </div>
-      </div>`
-    }
-  }
+  const seal = f.signature.sealDataUrl
+    ? `<img class="seal" src="${f.signature.sealDataUrl}" alt="">`
+    : ''
 
   return `<!doctype html>
 <html lang="en">
@@ -431,35 +409,35 @@ export function buildHospitalPrintHtml(model) {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+
+  /* one bordered A4 sheet ------------------------------------------------ */
   .sheet {
-    position: relative;
-    width: 210mm;
-    min-height: 297mm;
-    padding: 6mm 7mm 9mm;
-    page-break-after: always;
-    overflow: hidden;
+    width: 210mm; height: 297mm; padding: 5mm;
+    page-break-after: always; overflow: hidden;
   }
   .sheet:last-child { page-break-after: auto; }
+  .frame {
+    position: relative;
+    width: 100%; height: 100%;
+    border: 1.2px solid #000;
+    padding: 4mm;
+    display: flex; flex-direction: column;
+  }
 
   /* letterhead ---------------------------------------------------------- */
-  .lh { display: flex; align-items: center; gap: 5mm; padding-bottom: 1.6mm; }
-  .lh .logo { width: 23mm; height: 23mm; object-fit: contain; flex: 0 0 23mm; }
+  .lh { display: flex; align-items: center; gap: 5mm; padding-bottom: 1.4mm; }
+  .lh .logo { width: 20mm; height: 20mm; object-fit: contain; flex: 0 0 20mm; }
   .lh-txt { flex: 1; text-align: center; }
-  .h-name { font-size: 16.5pt; font-weight: 800; letter-spacing: .1px; line-height: 1.12; }
-  .h-addr { font-size: 10pt; font-weight: 700; margin-top: .5mm; }
-  .h-phone { font-size: 7.8pt; margin-top: .5mm; }
+  .h-name { font-size: 15.5pt; font-weight: 800; line-height: 1.1; }
+  .h-addr { font-size: 9.6pt; font-weight: 700; margin-top: .4mm; }
+  .h-phone { font-size: 7.5pt; margin-top: .4mm; }
 
   /* patient grid -------------------------------------------------------- */
   table.pgrid { width: 100%; border-collapse: collapse; table-layout: fixed; }
   table.pgrid td {
-    border: 1px solid #000;
-    padding: 1.05mm 1.6mm;
-    font-size: 8.5pt;
-    line-height: 1.2;
-    vertical-align: middle;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    border: 1px solid #000; padding: .95mm 1.5mm;
+    font-size: 8.2pt; line-height: 1.18; vertical-align: middle;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   }
   td.k { width: 16.5%; font-weight: 700; }
   td.v { width: 33.5%; font-weight: 700; }
@@ -468,99 +446,182 @@ export function buildHospitalPrintHtml(model) {
 
   /* title band ---------------------------------------------------------- */
   .band {
-    border-top: 1.3px solid #000;
-    border-bottom: 1.3px solid #000;
-    margin-top: 1.4mm;
-    padding: 1.1mm 0 .9mm;
-    text-align: center;
+    border-top: 1.3px solid #000; border-bottom: 1.3px solid #000;
+    margin-top: 1.2mm; padding: .95mm 0 .8mm; text-align: center;
   }
   .band h1 {
-    margin: 0;
-    font-size: 12.5pt;
-    font-weight: 700;
-    letter-spacing: .40em;
-    text-indent: .40em;
-    line-height: 1.1;
+    margin: 0; font-size: 12pt; font-weight: 700;
+    letter-spacing: .38em; text-indent: .38em; line-height: 1.05;
   }
 
-  /* two-column body ----------------------------------------------------- */
-  .cols { display: grid; grid-template-columns: 1fr 56mm; gap: 3.2mm; margin-top: 2.4mm; align-items: start; }
-  .top3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.4mm; }
-
+  /* pictures ------------------------------------------------------------ */
+  .top3 {
+    display: grid; grid-template-columns: repeat(3, 55.88mm);
+    justify-content: space-between; margin-top: 2mm;
+  }
   figure { margin: 0; }
   figure img {
-    display: block; width: 100%; background: #000;
-    aspect-ratio: 4 / 3; object-fit: contain;
+    display: block; width: 55.88mm; height: 50.8mm;
+    object-fit: contain; background: #000;
   }
-  .top3 figure img { aspect-ratio: 4 / 3; }
-  figcaption { text-align: center; font-size: 6.6pt; margin-top: .7mm; color: #111; }
+  figcaption { text-align: center; font-size: 6.4pt; margin-top: .6mm; color: #111; }
   .noimg {
     display: flex; align-items: center; justify-content: center;
-    aspect-ratio: 4 / 3; background: #eef3f7; color: #6b7280; font-size: 7pt;
-    border: 1px solid #cbd5e1;
+    width: 55.88mm; height: 50.8mm;
+    background: #eef3f7; color: #6b7280; font-size: 6.8pt; border: 1px solid #cbd5e1;
   }
 
-  .side4 { display: grid; gap: 2.4mm; }
-  .side4 figure img { aspect-ratio: 4 / 3; }
+  /* two columns; the picture column runs to the bottom border ------------ */
+  .cols {
+    flex: 1 1 auto; display: grid; grid-template-columns: 1fr 55.88mm;
+    gap: 4.5mm; margin-top: 2.2mm; min-height: 0;
+  }
+  .col-left { min-width: 0; padding-bottom: 24mm; }
+  .side4 { display: flex; flex-direction: column; justify-content: space-between; height: 100%; gap: 1.8mm; }
+  .side4 figure { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .side4 figure img { width: 55.88mm; flex: 1 1 auto; min-height: 0; height: auto; object-fit: contain; }
+  .side4 .noimg { flex: 1 1 auto; height: auto; min-height: 0; }
+  .side4 figcaption { flex: 0 0 auto; }
 
   /* text ---------------------------------------------------------------- */
-  .line { margin: 2.6mm 0 0; font-size: 9pt; line-height: 1.3; }
+  .line { margin: 2.1mm 0 0; font-size: 8.8pt; line-height: 1.28; }
   .lbl { font-weight: 700; }
-  .fh { font-weight: 700; font-size: 9.4pt; margin: 3.2mm 0 1mm; }
-  .fb { margin: 0 0 1.5mm; font-size: 8.9pt; line-height: 1.3; text-align: justify; }
+  .fh { font-weight: 700; font-size: 9.2pt; margin: 2.8mm 0 .9mm; }
+  .fb { margin: 0 0 1.4mm; font-size: 8.7pt; line-height: 1.3; text-align: justify; }
   .fb b i { font-weight: 700; }
-  .comments { margin-top: 3.4mm; font-size: 9pt; line-height: 1.35; }
+  .comments { margin-top: 3mm; font-size: 8.8pt; line-height: 1.35; }
 
   /* signature ----------------------------------------------------------- */
-  .sign { position: absolute; left: 7mm; bottom: 9mm; width: 88mm; }
-  .sign .nm {
-    font-size: 10pt; font-weight: 700; font-style: italic;
-    border-top: .7px solid #000; padding-top: 1mm;
-  }
-  .sign .dg { font-size: 7.4pt; line-height: 1.28; }
-  .sign .af { font-size: 7.4pt; font-style: italic; font-weight: 700; margin-top: .5mm; }
-
-  /* picture sheet ------------------------------------------------------- */
-  .plus-row { display: flex; gap: 6mm; justify-content: center; margin: 1.4mm 0 1.6mm; font-size: 7.6pt; }
-  .plus { display: inline-flex; align-items: center; gap: 1.2mm; }
-  .plus i {
-    width: 2.6mm; height: 2.6mm; border: .8px solid #000; border-radius: 50%;
-    display: inline-block;
-  }
-  .plus i.on { background: #000; box-shadow: inset 0 0 0 1px #fff; }
-  .plate6 { display: grid; grid-template-columns: 1fr 1fr; gap: 2.6mm; }
-  .plate6 figure { break-inside: avoid; }
-  .plate6 figure img { aspect-ratio: 4 / 3; }
-  .plate6 figure.empty .noimg { aspect-ratio: 4 / 3; }
+  .sign { position: absolute; left: 4mm; bottom: 4mm; width: 92mm; }
+  .seal { position: absolute; left: 0; bottom: 100%; height: 17mm; margin-bottom: 1mm; }
+  .sign .nm { font-size: 9.8pt; font-weight: 700; font-style: italic; border-top: .7px solid #000; padding-top: .9mm; }
+  .sign .dg { font-size: 7.2pt; line-height: 1.26; }
+  .sign .af { font-size: 7.2pt; font-style: italic; font-weight: 700; margin-top: .4mm; }
 </style>
 </head>
 <body>
   <div class="sheet">
-    ${header}
-    <div class="band"><h1>${esc(f.title)}</h1></div>
-    <div class="cols">
-      <div class="col-left">
-        <div class="top3">${f.top.map((m) => figure(m)).join('')}</div>
-        <p class="line"><span class="lbl">Procedure :</span> <span class="val">${esc(f.procedure)}</span></p>
-        <p class="line"><span class="lbl">Indication :</span> <span class="val">${esc(f.indication)}</span></p>
-        <p class="line"><span class="lbl">Medication :</span> <span class="val">${esc(f.medication)}</span></p>
-        <div class="fh">FINDINGS :</div>
-        ${findings}
-        ${comments}
-      </div>
-      <div class="col-right">
-        <div class="side4">${sideFigures}</div>
-      </div>
-    </div>
+    <div class="frame">
+      ${header}
+      <div class="band"><h1>${esc(f.title)}</h1></div>
 
-    <div class="sign">
-      <div class="nm">${esc(f.signature.name || '\u00a0')}</div>
-      ${f.signature.degrees ? `<div class="dg">${esc(f.signature.degrees)}</div>` : ''}
-      ${f.signature.designation ? `<div class="dg">${esc(f.signature.designation)}</div>` : ''}
-      ${f.signature.affiliation ? `<div class="af">${esc(f.signature.affiliation)}</div>` : ''}
+      <div class="top3">${f.top.map((m) => figure(m)).join('')}</div>
+
+      <div class="cols">
+        <div class="col-left">
+          <p class="line"><span class="lbl">Procedure :</span> <span class="val">${esc(f.procedure)}</span></p>
+          <p class="line"><span class="lbl">Indication :</span> <span class="val">${esc(f.indication)}</span></p>
+          <p class="line"><span class="lbl">Medication :</span> <span class="val">${esc(f.medication)}</span></p>
+          <div class="fh">FINDINGS :</div>
+          ${findings}
+          ${comments}
+        </div>
+        <div class="side4">${f.side.map((m) => figure(m, 'side')).join('')}</div>
+      </div>
+
+      <div class="sign">
+        ${seal}
+        <div class="nm">${esc(f.signature.name || '\u00a0')}</div>
+        ${f.signature.degrees ? `<div class="dg">${esc(f.signature.degrees)}</div>` : ''}
+        ${f.signature.designation ? `<div class="dg">${esc(f.signature.designation)}</div>` : ''}
+        ${f.signature.affiliation ? `<div class="af">${esc(f.signature.affiliation)}</div>` : ''}
+      </div>
     </div>
   </div>
-  ${extraSheets}
+</body>
+</html>`
+}
+
+/* -------------------------------------------------------------------------- */
+/* Image Plus — pictures only                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The "Image Plus" printout: the patient particulars and nothing but pictures.
+ * The clinic picks four or six frames; no findings, no report text.
+ */
+export function buildImagePlusHtml(model, options = {}) {
+  const f = model.hospital
+  if (!f) return ''
+  const count = options.count === 6 ? 6 : 4
+  const chosen = (options.images || model.media || []).filter((m) => m.kind === 'image').slice(0, count)
+  const font = (model.template.layout || {}).fontFamily || 'Arial'
+  const cols = count === 6 ? 2 : 2
+  const rows = Math.ceil(count / cols)
+
+  const cells = Array.from({ length: count })
+    .map((_, i) => {
+      const m = chosen[i]
+      if (!m) {
+        return `<figure><div class="noimg">No Preview Available</div><figcaption>&nbsp;</figcaption></figure>`
+      }
+      return `<figure>
+        ${m.dataUrl ? `<img src="${m.dataUrl}" alt="">` : '<div class="noimg">No Preview Available</div>'}
+        <figcaption>${esc(m.caption && m.caption !== '(no caption)' ? m.caption : '(Image Title)')}</figcaption>
+      </figure>`
+    })
+    .join('')
+
+  const grid = f.rows
+    .map(
+      ([left, right]) => `<tr>
+        <td class="k">${esc(left.label)}</td>
+        <td class="v">${esc(left.value)}</td>
+        <td class="k2">${esc(right.label)}</td>
+        <td class="v2">${esc(right.value)}</td>
+      </tr>`,
+    )
+    .join('')
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Image Plus — ${esc(model.patientLine.name)}</title>
+<style>
+  @page { size: A4 portrait; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body { font-family: ${font}, "Segoe UI", Arial, sans-serif; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .sheet { width: 210mm; height: 297mm; padding: 5mm; }
+  .frame { width: 100%; height: 100%; border: 1.2px solid #000; padding: 4mm; display: flex; flex-direction: column; }
+  .lh { display: flex; align-items: center; gap: 5mm; padding-bottom: 1.4mm; }
+  .lh .logo { width: 20mm; height: 20mm; object-fit: contain; flex: 0 0 20mm; }
+  .lh-txt { flex: 1; text-align: center; }
+  .h-name { font-size: 15.5pt; font-weight: 800; line-height: 1.1; }
+  .h-addr { font-size: 9.6pt; font-weight: 700; margin-top: .4mm; }
+  .h-phone { font-size: 7.5pt; margin-top: .4mm; }
+  table.pgrid { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  table.pgrid td { border: 1px solid #000; padding: .95mm 1.5mm; font-size: 8.2pt; line-height: 1.18; vertical-align: middle; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  td.k { width: 16.5%; font-weight: 700; }
+  td.v { width: 33.5%; font-weight: 700; }
+  td.k2 { width: 14.5%; font-weight: 700; }
+  td.v2 { width: 35.5%; }
+  .band { border-top: 1.3px solid #000; border-bottom: 1.3px solid #000; margin-top: 1.6mm; padding: 1mm 0 .9mm; text-align: center; }
+  .band h1 { margin: 0; font-size: 11.5pt; font-weight: 700; letter-spacing: .34em; text-indent: .34em; }
+  .plate { flex: 1 1 auto; display: grid; grid-template-columns: repeat(${cols}, 55.88mm); grid-auto-rows: 50.8mm; justify-content: center; align-content: start; gap: 6mm 8mm; margin-top: 4mm; }
+  figure { margin: 0; }
+  figure img { display: block; width: 55.88mm; height: 50.8mm; object-fit: contain; background: #000; }
+  figcaption { text-align: center; font-size: 6.6pt; margin-top: .8mm; }
+  .noimg { display: flex; align-items: center; justify-content: center; width: 55.88mm; height: 50.8mm; background: #eef3f7; color: #6b7280; font-size: 6.8pt; border: 1px solid #cbd5e1; }
+</style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="frame">
+      <div class="lh">
+        ${f.header.logo ? `<img class="logo" src="${f.header.logo}" alt="">` : ''}
+        <div class="lh-txt">
+          <div class="h-name">${esc(f.header.name)}</div>
+          ${f.header.address ? `<div class="h-addr">${esc(f.header.address)}</div>` : ''}
+          ${f.header.phones ? `<div class="h-phone">${esc(f.header.phones)}</div>` : ''}
+        </div>
+      </div>
+      <table class="pgrid">${grid}</table>
+      <div class="band"><h1>IMAGE PLUS — ${count} PICTURES</h1></div>
+      <div class="plate">${cells}</div>
+    </div>
+  </div>
 </body>
 </html>`
 }

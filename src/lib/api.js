@@ -62,6 +62,8 @@ export const api = {
     list: guard(bridge?.doctors?.list, 'doctors.list'),
     save: guard(bridge?.doctors?.save, 'doctors.save'),
     remove: guard(bridge?.doctors?.remove, 'doctors.remove'),
+    setSeal: guard(bridge?.doctors?.setSeal, 'doctors.setSeal'),
+    sealDataUrl: guard(bridge?.doctors?.sealDataUrl, 'doctors.sealDataUrl'),
   },
   templates: {
     list: guard(bridge?.templates?.list, 'templates.list'),

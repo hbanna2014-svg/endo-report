@@ -277,7 +277,15 @@ export function buildHospitalForm(model) {
     top,
     side,
     extraImages: plan.slots.filter((s) => s.no > 7 && s.media).map((s) => ({ ...s.media, no: s.no })),
-    signature: { name: doctorName, degrees, designation, affiliation },
+    signature: {
+      name: doctorName,
+      degrees,
+      designation,
+      affiliation,
+      /** signature stamp / seal image, inline for printing */
+      sealDataUrl: model.options?.sealDataUrl || procedure.performingDoctorSeal || '',
+      sealPath: procedure.performingDoctorSealPath || '',
+    },
     footer: {
       reportNo: model.reportNo,
       printedAt: model.generatedLine,
@@ -505,7 +513,7 @@ export function buildReportModel(patient, procedure, templateInput, options = {}
     },
     disclaimer: template.layout.footerText,
     confidentialNote: template.layout.confidentialNote,
-    options: { forPrint: !!options.forPrint },
+    options: { forPrint: !!options.forPrint, sealDataUrl: options.sealDataUrl || '' },
   }
 
   // The paper-form variant is built from the finished model, so the printer,

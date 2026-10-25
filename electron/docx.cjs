@@ -576,10 +576,16 @@ const BLACK_ALL = {
 /** Twips (1/1440 inch) → the pixel units docx uses for image sizing. */
 const mmToPx = (mm) => Math.round((mm / 25.4) * 96)
 
-function hospitalImage(buf, widthMm) {
+function hospitalImage(buf, widthMm, heightMm) {
   if (!buf) return null
-  return makeImageRun(buf, mmToPx(widthMm), mmToPx((widthMm * 3) / 4))
+  return makeImageRun(buf, mmToPx(widthMm), mmToPx(heightMm || (widthMm * 3) / 4))
 }
+
+/* The printed form uses 2.2 in x 2 in pictures. */
+const PIC_W = 55.88
+const PIC_H = 50.8
+/* Four of them must reach the bottom border, so the side column is shorter. */
+const SIDE_H = 39.5
 
 function cell(text, opts = {}) {
   const { bold, italic, size = 17, width, borders = BLACK_BORDER, align, spacing } = opts
@@ -606,8 +612,8 @@ function cell(text, opts = {}) {
   })
 }
 
-function figureParagraph(buf, caption, widthMm) {
-  const run = hospitalImage(buf, widthMm)
+function figureParagraph(buf, caption, widthMm, heightMm) {
+  const run = hospitalImage(buf, widthMm, heightMm)
   return [
     new Paragraph({
       alignment: AlignmentType.CENTER,
@@ -735,7 +741,7 @@ function buildHospitalDocument(model) {
         width: { size: 2500, type: WidthType.DXA },
         borders: NO_BORDER,
         margins: { top: 0, bottom: 40, left: 40, right: 40 },
-        children: m ? figureParagraph(bufFor(m), m.caption, 44) : figureParagraph(null, '', 44),
+        children: m ? figureParagraph(bufFor(m), m.caption, PIC_W, PIC_H) : figureParagraph(null, '', PIC_W, PIC_H),
       })
     }),
   })
@@ -749,7 +755,7 @@ function buildHospitalDocument(model) {
   const sideCellChildren = []
   for (let i = 0; i < 4; i += 1) {
     const m = f.side[i]
-    sideCellChildren.push(...figureParagraph(bufFor(m), m ? m.caption : '', 56))
+    sideCellChildren.push(...figureParagraph(bufFor(m), m ? m.caption : '', PIC_W, SIDE_H))
   }
 
   /* text column --------------------------------------------------------- */
@@ -832,7 +838,17 @@ function buildHospitalDocument(model) {
 
   /* signature ----------------------------------------------------------- */
   const signature = [
-    new Paragraph({ spacing: { before: 500 }, children: [] }),
+    new Paragraph({ spacing: { before: 1750 }, children: [] }),
+    f.signature.sealDataUrl
+      ? new Paragraph({
+          spacing: { before: 0, after: 20 },
+          children: (() => {
+            const m = /^data:image\/(png|jpe?g);base64,(.+)$/i.exec(f.signature.sealDataUrl)
+            if (!m) return [new TextRun({ text: '' })]
+            return [makeImageRun(Buffer.from(m[2], 'base64'), mmToPx(32), mmToPx(16))]
+          })(),
+        })
+      : null,
     new Paragraph({
       spacing: { before: 0, after: 0 },
       border: { top: { style: BorderStyle.SINGLE, size: 4, color: '000000', space: 2 } },
@@ -850,6 +866,23 @@ function buildHospitalDocument(model) {
   ]
 
   const signatureBody = [...signature].filter(Boolean)
+
+  /* The whole sheet carries a border, as on the paper form. */
+  const frame = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: BLACK_ALL,
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            borders: BLACK_ALL,
+            margins: { top: 110, bottom: 110, left: 110, right: 110 },
+            children: [letterhead, patientGrid, band, body, ...signatureBody],
+          }),
+        ],
+      }),
+    ],
+  })
 
   const signatureTable = new Table({
     width: { size: 58, type: WidthType.PERCENTAGE },
@@ -881,7 +914,7 @@ function buildHospitalDocument(model) {
             margin: { top: 340, bottom: 510, left: 397, right: 397 },
           },
         },
-        children: [letterhead, patientGrid, band, body, signatureTable],
+        children: [frame],
       },
     ],
   })

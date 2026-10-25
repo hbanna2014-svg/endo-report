@@ -41,15 +41,71 @@ import {
   useToast,
 } from './ui.jsx'
 
-const EMPTY_DOCTOR = { id: null, name: '', designation: '', role: 'endoscopist', regNo: '', phone: '', active: true }
+const EMPTY_DOCTOR = {
+  id: null,
+  name: '',
+  designation: '',
+  role: 'endoscopist',
+  regNo: '',
+  phone: '',
+  degrees: '',
+  affiliation: '',
+  sealPath: '',
+  isDefault: false,
+  active: true,
+}
 
 function DoctorDialog({ open, doctor, onClose, onSaved }) {
   const toast = useToast()
   const [form, setForm] = useState(EMPTY_DOCTOR)
+  const [sealPreview, setSealPreview] = useState('')
+  const [sealBytes, setSealBytes] = useState(null)
+  const [dropSeal, setDropSeal] = useState(false)
+  const sealRef = useRef(null)
 
   useEffect(() => {
     setForm({ ...EMPTY_DOCTOR, ...(doctor || {}) })
+    setSealPreview('')
+    setSealBytes(null)
+    setDropSeal(false)
+    if (doctor?.sealPath) {
+      api.doctors
+        .sealDataUrl(doctor.id)
+        .then((res) => setSealPreview(res?.dataUrl || ''))
+        .catch(() => setSealPreview(''))
+    }
   }, [doctor, open])
+
+  // The stamp is normalised to PNG so it prints identically everywhere.
+  const pickSeal = async (file) => {
+    if (!file) return
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      const img = await new Promise((resolve, reject) => {
+        const el = new window.Image()
+        el.onload = () => resolve(el)
+        el.onerror = reject
+        el.src = dataUrl
+      })
+      const max = 900
+      const scale = Math.min(1, max / Math.max(img.width, img.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(img.width * scale)
+      canvas.height = Math.round(img.height * scale)
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+      const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'))
+      setSealBytes(await blob.arrayBuffer())
+      setSealPreview(canvas.toDataURL('image/png'))
+      setDropSeal(false)
+    } catch (err) {
+      toast.push({ tone: 'err', title: 'Could not read that image', body: err.message })
+    }
+  }
 
   const save = async () => {
     if (!form.name.trim()) {
@@ -57,7 +113,12 @@ function DoctorDialog({ open, doctor, onClose, onSaved }) {
       return
     }
     try {
-      await api.doctors.save(form)
+      const saved = await api.doctors.save(form)
+      if (sealBytes && saved?.id) {
+        await api.doctors.setSeal(saved.id, sealBytes)
+      } else if (dropSeal && saved?.id) {
+        await api.doctors.save({ ...saved, sealPath: null })
+      }
       toast.push({ tone: 'ok', title: 'Doctor saved' })
       await onSaved?.()
       onClose?.()
@@ -108,11 +169,72 @@ function DoctorDialog({ open, doctor, onClose, onSaved }) {
         <Field label="Phone">
           <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
         </Field>
+        <Field label="Degrees" hint="Printed under the name on the report">
+          <Input
+            value={form.degrees}
+            onChange={(e) => setForm({ ...form, degrees: e.target.value })}
+            placeholder="MBBS, MD (Gastro), MACP (USA)"
+          />
+        </Field>
+        <Field label="Affiliation" hint="Hospital or institution line">
+          <Input
+            value={form.affiliation}
+            onChange={(e) => setForm({ ...form, affiliation: e.target.value })}
+            placeholder="Ibn Sina Medical College & Hospital"
+          />
+        </Field>
         <Field label="Status">
           <div style={{ paddingTop: 6 }}>
             <CheckRow checked={form.active} onChange={(v) => setForm({ ...form, active: v })} label="Active" />
           </div>
         </Field>
+      </div>
+
+      <div style={{ marginTop: 4 }}>
+        <CheckRow
+          checked={!!form.isDefault}
+          onChange={(v) => setForm({ ...form, isDefault: v })}
+          label="Use as the default endoscopist"
+          hint="New reports start with this name, degrees and stamp."
+        />
+      </div>
+
+      <div className="seal-row">
+        <div className="seal-preview">
+          {sealPreview ? <img src={sealPreview} alt="seal" /> : <span className="tiny muted">No stamp</span>}
+        </div>
+        <div className="seal-actions">
+          <div className="label">Signature stamp / seal</div>
+          <div className="tiny muted" style={{ marginBottom: 6 }}>
+            A transparent PNG of the doctor's signature or seal, printed above the name.
+          </div>
+          <div className="row" style={{ gap: 6 }}>
+            <Button size="sm" icon={Upload} onClick={() => sealRef.current?.click()}>
+              {sealPreview ? 'Replace' : 'Choose image'}
+            </Button>
+            {sealPreview ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={Trash2}
+                onClick={() => {
+                  setSealPreview('')
+                  setSealBytes(null)
+                  setDropSeal(true)
+                }}
+              >
+                Remove
+              </Button>
+            ) : null}
+          </div>
+          <input
+            ref={sealRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            hidden
+            onChange={(e) => pickSeal(e.target.files?.[0])}
+          />
+        </div>
       </div>
     </Modal>
   )

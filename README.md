@@ -58,7 +58,9 @@ Reproduces the printed form the unit already uses:
 - a four-column grid — **Identity No. · Visit Date · Patient Name · Age / Sex · History ·
   Instrument · Referrer · Bed**;
 - the letter-spaced `ENDOSCOPIC PROCEDURE REPORT` band;
-- **three pictures across the top and four down the right-hand column** (seven-picture plate);
+- a **border around the whole sheet**;
+- **three pictures across the top and four down the right-hand column**, the column running to
+  the bottom border, each picture exactly **2.2 in × 2 in**;
 - findings grouped by organ with `Oesophagus:-` style headings, plus `Biopsy:- Not taken.`;
 - a `COMMENTS :` block, and the endoscopist's signature with degrees, designation and hospital.
 
@@ -71,6 +73,21 @@ so they match. An optional trailing sheet prints six pictures on a 2 × 3 grid w
 The identity and file numbers come from the patient record (**Patients ▸ Hospital identity no. /
 Visit no.**) and can be overridden on the report itself, along with **Instrument**, **Bed**,
 **Medication** and **Comments** on the *Procedure details* tab.
+
+### Doctor signature and seal
+
+Each doctor in **Settings ▸ Doctors** can carry degrees, an affiliation and a **signature stamp
+image**, and one doctor can be marked as the default. On the report screen a **Signature & seal**
+selector fills the name, degrees, designation, affiliation and stamp in one click; the stamp
+prints above the signature rule in the preview, the PDF and the Word file.
+
+### Image Plus — pictures only
+
+**Print pictures only** produces a sheet with the hospital letterhead, the patient particulars and
+**four or six pictures** at 2.2 × 2 in — no findings and no report text. It uses the same border
+and header as the full report.
+
+![Image Plus sheet](docs/image-plus.png)
 
 ### Narrative report
 
@@ -110,7 +127,7 @@ On a Windows machine, double-click **`build-windows.bat`**, or run:
 ```bash
 npm install
 npm test          # offline self-test of the reporting engine
-npm run dist      # produces release/EndoReport-Setup-0.4.0.exe
+npm run dist      # produces release/EndoReport-Setup-0.5.0.exe
 ```
 
 The installer is created in `release/`. It is an assisted (non-silent) NSIS installer, so the
@@ -329,7 +346,7 @@ is not inside it, so nothing is lost either way. Every upgrade is written to
 ### চালু করার নিয়ম
 
 1. Windows কম্পিউটারে **Node.js 20+** ইনস্টল করে `build-windows.bat` ফাইলে ডাবল-ক্লিক করুন।
-2. কিছুক্ষণ পর `release` ফোল্ডারে **EndoReport-Setup-0.4.0.exe** তৈরি হবে — এটিই ক্লিনিকের
+2. কিছুক্ষণ পর `release` ফোল্ডারে **EndoReport-Setup-0.5.0.exe** তৈরি হবে — এটিই ক্লিনিকের
    কম্পিউটারে ইনস্টল করবেন।
 3. সংস্করণ পরীক্ষা করতে ইনস্টলেশনের আগে একবার ডেমো ডেটা দিয়ে দেখে নিতে পারেন:
    `scripts/seed-demo.cjs` তিনজন ডেমো রোগী তৈরি করে।
