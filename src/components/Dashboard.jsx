@@ -132,6 +132,7 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
   const [showStats, setShowStats] = useState(false)
   const [dayPatients, setDayPatients] = useState([])
   const [dayLoading, setDayLoading] = useState(false)
+  const [dayDoctor, setDayDoctor] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -150,6 +151,7 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
   useEffect(() => {
     let cancelled = false
     setDayLoading(true)
+    setDayDoctor('')
     api.procedures
       .list({ from: selectedDate, to: selectedDate, limit: 300 })
       .then((list) => {
@@ -205,6 +207,18 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
     rows.find((r) => dayKeyOf(r) === selectedDate) || {
       total: 0, endoscopy: 0, colonoscopy: 0, both: 0, polypectomy: 0, biopsy: 0,
     }
+  // Doctors who actually have a patient on the selected day.
+  const dayDoctors = useMemo(
+    () =>
+      [...new Set(dayPatients.map((p) => p.performingDoctor).filter(Boolean))].sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [dayPatients],
+  )
+  const shownPatients = dayDoctor
+    ? dayPatients.filter((p) => p.performingDoctor === dayDoctor)
+    : dayPatients
+
   const lastSeven = rows.slice(-7).reverse()
   const maxTotal = Math.max(1, ...lastSeven.map((r) => r.total || 0))
   const filteredConsultants = consultants.filter((c) =>
@@ -387,19 +401,38 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
           <section className="dash-main">
             <Card
               title={`Patients — ${prettyDate(selectedDate)}`}
-              subtitle={dayLoading ? 'Loading…' : `${dayPatients.length} patient(s) on this date`}
+              subtitle={
+                dayLoading
+                  ? 'Loading…'
+                  : `${shownPatients.length} patient(s)${dayDoctor ? ` · ${dayDoctor}` : ''} on this date`
+              }
               actions={
-                <input
-                  type="date"
-                  className="dash-date"
-                  value={selectedDate}
-                  max={todayKey}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                />
+                <div className="row" style={{ gap: 8 }}>
+                  <select
+                    className="dash-date"
+                    value={dayDoctor}
+                    onChange={(e) => setDayDoctor(e.target.value)}
+                    title="Filter by consultant"
+                  >
+                    <option value="">All doctors</option>
+                    {dayDoctors.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="date"
+                    className="dash-date"
+                    value={selectedDate}
+                    max={todayKey}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                  />
+                </div>
               }
               bodyClass="tight"
             >
-              {dayPatients.length ? (
+              {shownPatients.length ? (
                 <table className="table">
                   <thead>
                     <tr>
@@ -411,7 +444,7 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
                     </tr>
                   </thead>
                   <tbody>
-                    {dayPatients.map((p) => (
+                    {shownPatients.map((p) => (
                       <tr key={p.id} onClick={() => onOpenProcedure(p.id, p.patientId)}>
                         <td>
                           <div className="name">{p.patientName}</div>
@@ -440,12 +473,20 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
               ) : (
                 <Empty
                   icon={CalendarDays}
-                  title="No patients on this date"
-                  hint="Pick another date, or register a patient to start a report."
+                  title={dayDoctor ? `No patients for ${dayDoctor} on this date` : 'No patients on this date'}
+                  hint={
+                    dayDoctor
+                      ? 'Choose another doctor, another date, or clear the filter.'
+                      : 'Pick another date, or register a patient to start a report.'
+                  }
                   action={
-                    <Button variant="primary" icon={UserPlus} onClick={() => onNavigate('patients')}>
-                      New patient
-                    </Button>
+                    dayDoctor ? (
+                      <Button onClick={() => setDayDoctor('')}>Show all doctors</Button>
+                    ) : (
+                      <Button variant="primary" icon={UserPlus} onClick={() => onNavigate('patients')}>
+                        New patient
+                      </Button>
+                    )
                   }
                 />
               )}

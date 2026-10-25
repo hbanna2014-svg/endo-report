@@ -4,6 +4,16 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.7 — 2026-10-26
+
+### Dashboard
+
+- The daily patient list now has a **doctor selector** beside the date: "All doctors" by
+  default, listing only the consultants who actually have a patient on that date. Picking one
+  narrows the list and the subtitle shows the count and the name; an empty result offers
+  *Show all doctors*.
+- Changing the date clears the doctor filter.
+
 ## 0.5.6 — 2026-10-26
 
 ### Dashboard
