@@ -10,6 +10,7 @@ import { Printer, Download, FileText, Copy, Sparkles, Images } from 'lucide-reac
 
 import { Button, Card, Chip, Empty, SeverityChip } from './ui.jsx'
 import ReportPlate from './ReportPlate.jsx'
+import HospitalForm from './HospitalForm.jsx'
 import RichFindings from './RichFindings.jsx'
 
 export default function ReportView({
@@ -49,41 +50,73 @@ export default function ReportView({
   const plan = model.imagePlan || { mode: 'flow', slots: [], filled: 0, capacity: 0 }
   const sideCount = plan.mode === 'grid6' ? 3 : plan.mode === 'grid4' ? 4 : 0
 
+  const actionsJsx = (
+    <>
+      <Button size="sm" icon={Copy} onClick={onCopy} disabled={busy}>
+        Copy text
+      </Button>
+      <Button size="sm" icon={FileText} onClick={onPdf} disabled={busy}>
+        Save PDF
+      </Button>
+      <Button size="sm" icon={Download} onClick={onDocx} disabled={busy}>
+        Word
+      </Button>
+      <Button size="sm" variant="primary" icon={Printer} onClick={onPrint} disabled={busy}>
+        Print
+      </Button>
+    </>
+  )
+
+  const chipsJsx = (
+    <div className="row wrap small" style={{ gap: 8, marginBottom: 12 }}>
+      <Chip tone={astats?.errors ? 'danger' : 'ok'}>
+        {astats?.errors ? `${astats.errors} blocking issue(s)` : 'Ready to finalise'}
+      </Chip>
+      <Chip tone="brand">
+        {model.analysis.counts.documented}/{model.analysis.counts.expected} sections documented
+      </Chip>
+      <Chip tone="info">{model.analysis.counts.findings} abnormal finding(s)</Chip>
+      <Chip>Audit score {model.audit.score}%</Chip>
+      {model.media.some((m) => m.kind === 'image') ? (
+        <Chip tone="info">
+          <Images size={11} /> {model.media.filter((m) => m.kind === 'image').length} image(s)
+        </Chip>
+      ) : null}
+    </div>
+  )
+
+  /* The unit's own paper form has its own geometry, so it renders through a
+     dedicated component rather than the narrative sheet below. */
+  if ((model.template.layout?.style || 'standard') === 'hospital') {
+    return (
+      <Card
+        title={compact ? 'Report' : 'Report preview'}
+        subtitle={`${model.title} · ${model.reportNo}`}
+        actions={actionsJsx}
+      >
+        {chipsJsx}
+        <HospitalForm
+          model={model}
+          editable={editable}
+          onImagePick={onImagePick}
+          onImageClear={onImageClear}
+          onImageMove={onImageMove}
+          onAddPicture={onAddPicture}
+          onField={onField}
+          reference={reference}
+        />
+      </Card>
+    )
+  }
+
   return (
     <>
       <Card
         title={compact ? 'Report' : 'Report preview'}
         subtitle={`${model.title} · ${model.reportNo}`}
-        actions={
-          <>
-            <Button size="sm" icon={Copy} onClick={onCopy} disabled={busy}>
-              Copy text
-            </Button>
-            <Button size="sm" icon={FileText} onClick={onPdf} disabled={busy}>
-              Save PDF
-            </Button>
-            <Button size="sm" icon={Download} onClick={onDocx} disabled={busy}>
-              Word
-            </Button>
-            <Button size="sm" variant="primary" icon={Printer} onClick={onPrint} disabled={busy}>
-              Print
-            </Button>
-          </>
-        }
+        actions={actionsJsx}
       >
-        <div className="row wrap small" style={{ gap: 8, marginBottom: 12 }}>
-          <Chip tone={astats?.errors ? 'danger' : 'ok'}>
-            {astats?.errors ? `${astats.errors} blocking issue(s)` : 'Ready to finalise'}
-          </Chip>
-          <Chip tone="brand">{model.analysis.counts.documented}/{model.analysis.counts.expected} sections documented</Chip>
-          <Chip tone="info">{model.analysis.counts.findings} abnormal finding(s)</Chip>
-          <Chip>Audit score {model.audit.score}%</Chip>
-          {model.media.some((m) => m.kind === 'image') ? (
-            <Chip tone="info">
-              <Images size={11} /> {model.media.filter((m) => m.kind === 'image').length} image(s)
-            </Chip>
-          ) : null}
-        </div>
+        {chipsJsx}
 
         <div className={`report-paper${docMode ? ' doc-mode' : ''}`} ref={reference}>
           {!docMode ? (

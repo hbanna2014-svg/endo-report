@@ -15,7 +15,7 @@ const crypto = require('node:crypto')
  * Bump this whenever the schema changes and add a matching entry to MIGRATIONS.
  * Existing clinics are upgraded in place; their data is never recreated.
  */
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 /**
  * Ordered, idempotent schema migrations. Each entry moves a database from
@@ -36,6 +36,15 @@ const MIGRATIONS = [
       )
       await db.exec(`CREATE INDEX IF NOT EXISTS idx_media_taken ON media(taken_at)`)
       await db.exec(`CREATE INDEX IF NOT EXISTS idx_procedures_status ON procedures(report_status)`)
+    },
+  },
+  {
+    to: 3,
+    name: 'hospital identity / visit numbers on the patient record',
+    up: async (db) => {
+      await db.exec(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS identity_no TEXT`)
+      await db.exec(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS visit_id TEXT`)
+      await db.exec(`CREATE INDEX IF NOT EXISTS idx_patients_identity ON patients(identity_no)`)
     },
   },
 ]
@@ -62,6 +71,8 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 CREATE TABLE IF NOT EXISTS patients (
   id TEXT PRIMARY KEY,
   reg_no TEXT UNIQUE,
+  identity_no TEXT,
+  visit_id TEXT,
   name TEXT NOT NULL,
   age TEXT,
   age_unit TEXT DEFAULT 'years',
@@ -136,6 +147,7 @@ CREATE INDEX IF NOT EXISTS idx_procedures_patient ON procedures(patient_id);
 CREATE INDEX IF NOT EXISTS idx_procedures_date ON procedures(procedure_date);
 CREATE INDEX IF NOT EXISTS idx_media_procedure ON media(procedure_id);
 CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(name);
+CREATE INDEX IF NOT EXISTS idx_patients_identity ON patients(identity_no);
 `
 
 function newId() {
@@ -268,6 +280,8 @@ function rowToPatient(r) {
   return {
     id: r.id,
     regNo: r.reg_no,
+    identityNo: r.identity_no,
+    visitId: r.visit_id,
     name: r.name,
     age: r.age,
     ageUnit: r.age_unit,
@@ -299,6 +313,8 @@ async function nextRegNo() {
 
 const PATIENT_COLUMNS = [
   ['reg_no', 'regNo'],
+  ['identity_no', 'identityNo'],
+  ['visit_id', 'visitId'],
   ['name', 'name'],
   ['age', 'age'],
   ['age_unit', 'ageUnit'],

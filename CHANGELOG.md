@@ -4,6 +4,57 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.4.0 — 2026-10-25
+
+**Theme: the report now prints on the unit's own paper form.**
+
+### Hospital paper form
+
+- New **Hospital paper form** report style that reproduces the printed form endoscopy units already
+  use: letterhead with logo, the identity / visit date / patient / age–sex / history / instrument /
+  referrer / bed grid, the letter-spaced `ENDOSCOPIC PROCEDURE REPORT` band, **three pictures
+  across the top and four down the right-hand column**, organ-grouped findings with
+  `Oesophagus:-` style headings, a `COMMENTS` block and the endoscopist's signature with degrees,
+  designation and hospital at the foot of the page.
+- Identical geometry in three renderers — the on-screen preview (`HospitalForm.jsx`), the printer
+  and PDF (`buildHospitalPrintHtml`) and the Word file (`buildHospitalDocument`) — all driven by
+  one `model.hospital` object, so they cannot drift apart.
+- New seven-picture plate (`form7`) used by the form; the four- and six-picture plates remain for
+  the narrative report.
+- Optional trailing **6-picture sheet** ("Image Plus 1–6") on a 2 × 3 grid.
+- Organ-grouped findings drop a "was normal" sentence when another segment of the same organ is
+  abnormal, so a bullet never reads "was normal … erythema was seen".
+- The style is selectable in **Report template**, and a Hospital paper form template is created
+  automatically on first run and marked default.
+
+### Patient and procedure fields for the printed header
+
+- `patients.identity_no` and `patients.visit_id` (hospital identity and file numbers), with inputs
+  on the patient form; either can be overridden per report.
+- New procedure fields: `bed`, `medication` (e.g. `2% Jascocaine jelly`) and `comments` (the
+  `COMMENTS :` line), plus per-report `identityNo` / `visitId`.
+- `api.patients.update` was referenced by the console but never exposed; it now maps to save so
+  in-place edits on the report sheet persist.
+
+### Fixes
+
+- First-run template seeding could create the standard template *after* the hospital form and
+  silently take over the default; the template list is now re-read before that fallback.
+- Word export now falls back to an inline `dataUrl` when the media file is not on disk.
+
+### Database
+
+Schema v2 → v3: `patients.identity_no`, `patients.visit_id` and an identity index. Existing
+records are preserved; the upgrade is automatic and the database is copied first.
+
+### Tooling
+
+- `npm run preview:hospital` writes `preview/hospital.html` and `.docx` from sample data.
+- `scripts/render-html.cjs` screenshots any local HTML file with Electron (used to check the print
+  layout without a printer).
+
+---
+
 ## 0.3.0 — 2026-10-25
 
 **Theme: an update can never cost you a patient record.**

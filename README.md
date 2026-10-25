@@ -46,7 +46,40 @@ structured findings** and their value fields.
 
 ---
 
-## 2. Requirements
+## 2. Report layouts
+
+Two print layouts ship with the software. Pick one per template in **Report template**.
+
+### Hospital paper form
+
+Reproduces the printed form the unit already uses:
+
+- letterhead with logo, hospital name, address and telephone lines;
+- a four-column grid — **Identity No. · Visit Date · Patient Name · Age / Sex · History ·
+  Instrument · Referrer · Bed**;
+- the letter-spaced `ENDOSCOPIC PROCEDURE REPORT` band;
+- **three pictures across the top and four down the right-hand column** (seven-picture plate);
+- findings grouped by organ with `Oesophagus:-` style headings, plus `Biopsy:- Not taken.`;
+- a `COMMENTS :` block, and the endoscopist's signature with degrees, designation and hospital.
+
+The on-screen preview, the printed page and the exported `.docx` are all produced from one model,
+so they match. An optional trailing sheet prints six pictures on a 2 × 3 grid with the
+"Image Plus 1–6" row.
+
+![Hospital paper form](docs/hospital-form.png)
+
+The identity and file numbers come from the patient record (**Patients ▸ Hospital identity no. /
+Visit no.**) and can be overridden on the report itself, along with **Instrument**, **Bed**,
+**Medication** and **Comments** on the *Procedure details* tab.
+
+### Narrative report
+
+Letterhead, patient table, narrative findings, impression, recommendations and a picture plate —
+useful for referral letters and for clinics without a fixed paper form.
+
+---
+
+## 3. Requirements
 
 - **Windows 10 / 11 (64-bit)** for the installer build
 - **Node.js 20 or newer** — only needed to *build* the installer, not to run it
@@ -55,7 +88,7 @@ structured findings** and their value fields.
 
 ---
 
-## 3. Running it
+## 4. Running it
 
 ### Development (hot reload)
 
@@ -77,7 +110,7 @@ On a Windows machine, double-click **`build-windows.bat`**, or run:
 ```bash
 npm install
 npm test          # offline self-test of the reporting engine
-npm run dist      # produces release/EndoReport-Setup-0.3.0.exe
+npm run dist      # produces release/EndoReport-Setup-0.4.0.exe
 ```
 
 The installer is created in `release/`. It is an assisted (non-silent) NSIS installer, so the
@@ -96,7 +129,7 @@ can be shown to a clinic without typing anything.
 
 ---
 
-## 4. Where the data lives
+## 5. Where the data lives
 
 ```
 <Documents>\EndoReportData\
@@ -114,7 +147,7 @@ from a JSON file is available when you do not want to erase what is already on t
 
 ---
 
-## 5. Using the software — the short version
+## 6. Using the software — the short version
 
 ### The live console (the screen you work on)
 
@@ -182,7 +215,7 @@ Capture button in the top bar still works while you are typing a finding.
 
 ---
 
-## 6. What the audit checks
+## 7. What the audit checks
 
 The audit is decision *support*; it never changes the medical content of your report.
 
@@ -218,7 +251,7 @@ Every report gets a completeness score (coverage of expected sections, minus pen
 
 ---
 
-## 7. Extending it
+## 8. Extending it
 
 - **Add or change a finding** — `src/lib/findings-ogd.js` and `src/lib/findings-colon.js`.
   A finding is a small object with `phrase` (narrative), `impression`, `advice`, `fields` and
@@ -235,7 +268,7 @@ a section without a finding catalogue is caught before shipping.
 
 ---
 
-## 8. Updating safely
+## 9. Updating safely
 
 The patient database lives in its own folder, **outside** the program folder, so replacing the
 application can never delete a record. On top of that:
@@ -276,7 +309,7 @@ is not inside it, so nothing is lost either way. Every upgrade is written to
 
 ---
 
-## 9. Clinical and legal caveats
+## 10. Clinical and legal caveats
 
 - The recommendations (including the post-polypectomy surveillance interval) follow widely used
   BSG/ESGE-style conventions. They are **decision support only** — the endoscopist and the
@@ -296,7 +329,7 @@ is not inside it, so nothing is lost either way. Every upgrade is written to
 ### চালু করার নিয়ম
 
 1. Windows কম্পিউটারে **Node.js 20+** ইনস্টল করে `build-windows.bat` ফাইলে ডাবল-ক্লিক করুন।
-2. কিছুক্ষণ পর `release` ফোল্ডারে **EndoReport-Setup-0.3.0.exe** তৈরি হবে — এটিই ক্লিনিকের
+2. কিছুক্ষণ পর `release` ফোল্ডারে **EndoReport-Setup-0.4.0.exe** তৈরি হবে — এটিই ক্লিনিকের
    কম্পিউটারে ইনস্টল করবেন।
 3. সংস্করণ পরীক্ষা করতে ইনস্টলেশনের আগে একবার ডেমো ডেটা দিয়ে দেখে নিতে পারেন:
    `scripts/seed-demo.cjs` তিনজন ডেমো রোগী তৈরি করে।

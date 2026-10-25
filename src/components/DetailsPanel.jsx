@@ -61,6 +61,22 @@ export default function DetailsPanel({ procedure, patch, activeSection, onSelect
               placeholder="e.g. 18"
             />
           </Field>
+          <Field label="Medication / premedication" className="c2" hint="Printed on the report form, e.g. 2% Jascocaine jelly">
+            <Input
+              value={procedure.medication || ''}
+              onChange={(e) => patch({ medication: e.target.value })}
+              placeholder="e.g. 2% Jascocaine jelly"
+            />
+          </Field>
+          <Field label="Bed / ward" hint="Printed on the report header (default OPD)">
+            <Input value={procedure.bed || ''} onChange={(e) => patch({ bed: e.target.value })} placeholder="OPD" />
+          </Field>
+          <Field label="Identity no. on this report" hint="Overrides the patient record if the hospital uses a different number">
+            <Input value={procedure.identityNo || ''} onChange={(e) => patch({ identityNo: e.target.value })} />
+          </Field>
+          <Field label="Visit / file no. on this report">
+            <Input value={procedure.visitId || ''} onChange={(e) => patch({ visitId: e.target.value })} />
+          </Field>
           <Field label="Sedation / anaesthesia" className="c2">
             <Select
               value={procedure.sedation || ''}
@@ -234,6 +250,14 @@ export default function DetailsPanel({ procedure, patch, activeSection, onSelect
             </div>
           </div>
 
+          <Field label="COMMENTS on the printed form" hint="Printed under the findings. Leave empty to use the generated impression.">
+            <Textarea
+              value={procedure.comments || ''}
+              onChange={(e) => patch({ comments: e.target.value })}
+              placeholder="e.g. Antral Gastritis"
+              style={{ minHeight: 52 }}
+            />
+          </Field>
           <Field label="Impression / diagnosis (manual override)">
             <Textarea
               value={procedure.impressionOverride || ''}

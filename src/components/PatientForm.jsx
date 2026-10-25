@@ -13,6 +13,8 @@ const AGE_UNITS = ['years', 'months', 'days']
 export const EMPTY_PATIENT = {
   id: null,
   regNo: '',
+  identityNo: '',
+  visitId: '',
   name: '',
   age: '',
   ageUnit: 'years',
@@ -105,6 +107,12 @@ export default function PatientForm({ open, patient, doctors = [], onClose, onSa
         </Field>
         <Field label="Registration no" hint={!form.regNo ? `Suggested: ${suggestedReg || '…'}` : ''}>
           <Input value={form.regNo} onChange={set('regNo')} placeholder={suggestedReg} />
+        </Field>
+        <Field label="Hospital identity no." hint="Printed on the report header">
+          <Input value={form.identityNo} onChange={set('identityNo')} placeholder="e.g. 00053211" />
+        </Field>
+        <Field label="Visit / file no." hint="Second number in the header">
+          <Input value={form.visitId} onChange={set('visitId')} placeholder="e.g. C1853940" />
         </Field>
         <Field label="Age">
           <div className="row">

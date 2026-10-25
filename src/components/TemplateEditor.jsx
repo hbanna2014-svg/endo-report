@@ -219,6 +219,48 @@ export default function TemplateEditor({ templates, onChanged }) {
 
               <WordTemplateCard draft={draft} setDraft={setDraft} toast={toast} />
 
+              <Card title="Report style" subtitle="Which page layout is printed">
+                <div className="grid c2">
+                  <button
+                    type="button"
+                    className={`style-option${(draft.layout.style || 'standard') === 'standard' ? ' on' : ''}`}
+                    onClick={() => setDraft({ ...draft, layout: { ...draft.layout, style: 'standard' } })}
+                  >
+                    <strong>Narrative report</strong>
+                    <span className="tiny muted">
+                      Letterhead, patient table, findings, impression, recommendations and a picture plate.
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`style-option${draft.layout.style === 'hospital' ? ' on' : ''}`}
+                    onClick={() =>
+                      setDraft({
+                        ...draft,
+                        layout: { ...draft.layout, style: 'hospital', imageLayout: 'form7' },
+                      })
+                    }
+                  >
+                    <strong>Hospital paper form</strong>
+                    <span className="tiny muted">
+                      Your unit's own form: identity / visit grid, title band, three pictures on top and four down the
+                      right, findings, comments and signature.
+                    </span>
+                  </button>
+                </div>
+
+                {draft.layout.style === 'hospital' ? (
+                  <div style={{ marginTop: 12 }}>
+                    <CheckRow
+                      checked={!!draft.layout.extraImageSheet}
+                      onChange={(v) => patchLayout('extraImageSheet', v)}
+                      label="Also print a 6-picture sheet (Image Plus 1–6)"
+                      hint="Adds a page after the report with six frames on a 2 × 3 grid and the same letterhead."
+                    />
+                  </div>
+                ) : null}
+              </Card>
+
               <Card title="Sections shown in the report">
                 <div className="grid c2">
                   <CheckRow checked={draft.layout.showLogo} onChange={(v) => patchLayout('showLogo', v)} label="Clinic logo" />

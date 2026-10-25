@@ -38,6 +38,7 @@ export const api = {
     list: guard(bridge?.patients?.list, 'patients.list'),
     get: guard(bridge?.patients?.get, 'patients.get'),
     save: guard(bridge?.patients?.save, 'patients.save'),
+    update: guard(bridge?.patients?.save, 'patients.update'),
     remove: guard(bridge?.patients?.remove, 'patients.remove'),
     nextRegNo: guard(bridge?.patients?.nextRegNo, 'patients.nextRegNo'),
   },

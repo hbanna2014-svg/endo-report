@@ -79,8 +79,38 @@ export default function App() {
         const info = await api.app.info()
         if (cancelled) return
         setMeta(info)
-        const list = await refreshLookups()
+        let list = await refreshLookups()
         if (cancelled) return
+        // Seed the hospital paper form once. It mirrors the printed form the
+        // unit already uses, so the very first report comes out looking right.
+        try {
+          const seeded = await api.settings.get('template.hospitalSeeded', false)
+          if (!seeded && !list.some((t) => (t.layout?.style || 'standard') === 'hospital')) {
+            await api.templates.save({
+              ...DEFAULT_TEMPLATE,
+              id: null,
+              name: 'Hospital paper form',
+              isDefault: true,
+              layout: {
+                ...DEFAULT_TEMPLATE.layout,
+                style: 'hospital',
+                imageLayout: 'form7',
+                extraImageSheet: false,
+              },
+            })
+            await api.settings.set('template.hospitalSeeded', true)
+          }
+          // Re-read so the standard-template fallback below never overwrites the
+          // default that was just created.
+          list = await refreshLookups()
+        } catch (err) {
+          toast.push({
+            tone: 'warn',
+            title: 'The hospital form could not be prepared',
+            body: err.message,
+          })
+        }
+
         if (!list.length) {
           // First run: create the standard template so the app is usable
           // immediately. A failure here must not block the whole application —

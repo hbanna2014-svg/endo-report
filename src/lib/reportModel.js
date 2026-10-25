@@ -30,12 +30,16 @@ export const DEFAULT_TEMPLATE = {
     doctorRegNo: '',
   },
   layout: {
+    /** 'standard' = narrative report · 'hospital' = the unit's own paper form */
+    style: 'standard',
     showLogo: true,
     showImages: true,
     /** 'flow' = as many images as captured · 'grid4' = fixed 2x2 · 'grid6' = fixed 2x3 */
     imageLayout: 'grid4',
     imageColumns: 3,
     showImageCaptions: true,
+    /** print a separate 6-picture sheet after the report page */
+    extraImageSheet: false,
     showImpression: true,
     showRecommendation: true,
     showAudit: false,
@@ -56,6 +60,7 @@ export const DEFAULT_TEMPLATE = {
  * an A4 sheet — this mirrors the paper forms most endoscopy units already use.
  */
 export const IMAGE_LAYOUTS = [
+  { id: 'form7', label: 'Seven pictures — three on top, four on the right', capacity: 7, columns: 3, top: 3, side: 4 },
   { id: 'grid4', label: 'Four pictures — full-height right column', capacity: 4, columns: 1, top: 0, side: 4 },
   { id: 'grid6', label: 'Six pictures — three on top, three on the right', capacity: 6, columns: 3, top: 3, side: 3 },
   { id: 'flow', label: 'All captured images (automatic)', capacity: 0, columns: 3, top: 0, side: 0 },
@@ -125,6 +130,161 @@ const escHtml = (t) =>
  * itself. `procedure.reportHtml` holds that edit; when it is absent the block is
  * generated from the ticked findings.
  */
+/* -------------------------------------------------------------------------- */
+/* Hospital paper form                                                        */
+/* -------------------------------------------------------------------------- */
+
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
+/** "17 October, 2026" — the format used on the printed form. */
+export function fmtLongDate(value) {
+  if (!value) return ''
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return String(value)
+  return `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()]}, ${d.getFullYear()}`
+}
+
+export function procedureLine(testName) {
+  if (testName === 'colonoscopy') return 'COLONOSCOPY.'
+  if (testName === 'both') return 'UPPER G.I. TRACT ENDOSCOPY & COLONOSCOPY.'
+  return 'UPPER G.I. TRACT ENDOSCOPY.'
+}
+
+/** Section labels collapse to the organ name the printed form uses. */
+function organOf(heading) {
+  const base = String(heading || '').split(' — ')[0].trim()
+  const map = {
+    'Gastro-oesophageal junction': 'Oesophagus',
+    'Stomach — Fundus': 'Stomach',
+    'Duodenum — 1st part (bulb)': 'Duodenum',
+    'Duodenum — 2nd part (D2)': 'Duodenum',
+    'Anal canal / perianal': 'Anal canal',
+  }
+  return map[heading] || base
+}
+
+const ORGAN_ORDER = [
+  'Oesophagus', 'Stomach', 'Duodenum',
+  'Rectum', 'Sigmoid colon', 'Descending colon', 'Splenic flexure',
+  'Transverse colon', 'Hepatic flexure', 'Ascending colon', 'Caecum',
+  'Ileocaecal valve', 'Terminal ileum', 'Anal canal',
+]
+
+/**
+ * Everything the paper form needs, in the order it appears on the page.
+ * The HTML printer, the Word exporter and the on-screen preview all read this
+ * one object, so the three outputs cannot drift apart.
+ */
+export function buildHospitalForm(model) {
+  const template = model.template || {}
+  const clinic = template.clinic || {}
+  const patient = model.patient || {}
+  const procedure = model.procedure || {}
+
+  const identityNo = String(procedure.identityNo || patient.identityNo || '').trim()
+  const visitId = String(procedure.visitId || patient.visitId || '').trim()
+  const identity = [identityNo || patient.regNo || '', visitId].filter(Boolean).join('   ')
+
+  const ageSex = [patient.age, patient.sex].filter(Boolean).join(' / ')
+  const history = String(patient.history || procedure.history || '').trim()
+
+  const rows = [
+    [
+      { label: 'Identity No.', value: identity },
+      { label: 'Visit Date', value: fmtLongDate(procedure.procedureDate) },
+    ],
+    [
+      { label: 'Patient Name', value: patient.name || '' },
+      { label: 'Age / Sex', value: ageSex },
+    ],
+    [
+      { label: 'History', value: history || 'N/A' },
+      { label: 'Instrument', value: procedure.scopeModel || 'N/A' },
+    ],
+    [
+      { label: 'Referrer', value: procedure.referredBy || patient.referredBy || '' },
+      { label: 'Bed', value: procedure.bed || 'OPD' },
+    ],
+  ]
+
+  // Findings: merge the per-section blocks into organ bullets, in form order.
+  // A segment reported as normal is dropped when the same organ also has an
+  // abnormality — otherwise the bullet reads "was normal … erythema was seen".
+  const blocks = model.analysis?.blocks?.length
+    ? model.analysis.blocks.map((b) => ({ heading: b.label, text: b.text, severity: b.severity }))
+    : (model.narrative?.findings || []).map((b) => ({ ...b, severity: 'unknown' }))
+
+  const merged = new Map()
+  for (const block of blocks) {
+    const organ = organOf(block.heading)
+    const entry = merged.get(organ) || { texts: [], severities: [] }
+    entry.texts.push({ text: block.text, severity: block.severity })
+    entry.severities.push(block.severity)
+    merged.set(organ, entry)
+  }
+
+  const findings = [...merged.entries()]
+    .sort((a, b) => {
+      const ia = ORGAN_ORDER.indexOf(a[0])
+      const ib = ORGAN_ORDER.indexOf(b[0])
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+    })
+    .map(([heading, entry]) => {
+      const abnormal = entry.severities.some((sv) => sv && sv !== 'normal' && sv !== 'unknown')
+      const keep = abnormal ? entry.texts.filter((t) => t.severity !== 'normal') : entry.texts
+      return { heading, text: keep.map((t) => t.text).join(' ').trim() }
+    })
+    .filter((row) => row.text)
+
+  const biopsy = procedure.biopsy?.taken
+    ? `Taken${procedure.biopsy.sites ? ` — ${procedure.biopsy.sites}` : ''}${procedure.biopsy.count ? ` (${procedure.biopsy.count} specimen(s))` : ''}.`
+    : 'Not taken.'
+  findings.push({ heading: 'Biopsy', text: biopsy })
+
+  const comments = String(procedure.comments || '').trim() || String(model.narrative?.diagnosis || '').trim()
+  const commentLines = comments
+    .split('\n')
+    .map((l) => l.replace(/^[•*-]\s*/, '').trim())
+    .filter(Boolean)
+
+  const doctorName =
+    procedure.performingDoctor || patient.performingDoctor || clinic.doctorName || ''
+  const degrees = procedure.performingDoctorDegrees || clinic.doctorDegrees || ''
+  const designation = procedure.performingDoctorDesignation || clinic.doctorDesignation || ''
+  const affiliation = procedure.performingDoctorAffiliation || clinic.name || ''
+
+  const plan = model.imagePlan || { slots: [] }
+  const top = plan.slots.filter((s) => s.no <= 3 && s.media).map((s) => ({ ...s.media, no: s.no }))
+  const side = plan.slots.filter((s) => s.no > 3 && s.media).map((s) => ({ ...s.media, no: s.no }))
+
+  return {
+    header: {
+      logo: clinic.logoDataUrl || '',
+      name: clinic.name || '',
+      address: clinic.address || '',
+      phones: [clinic.phone, clinic.email].filter(Boolean).join(', '),
+    },
+    rows,
+    title: 'ENDOSCOPIC PROCEDURE REPORT',
+    procedure: procedureLine(procedure.testName),
+    indication: String(procedure.indication || patient.indication || '').trim() || 'N/A',
+    medication: String(procedure.medication || procedure.sedation || '').trim() || 'N/A',
+    findings,
+    comments: commentLines,
+    top,
+    side,
+    extraImages: plan.slots.filter((s) => s.no > 7 && s.media).map((s) => ({ ...s.media, no: s.no })),
+    signature: { name: doctorName, degrees, designation, affiliation },
+    footer: {
+      reportNo: model.reportNo,
+      printedAt: model.generatedLine,
+    },
+  }
+}
+
 export function buildRichFindings(narrative, procedure) {
   const generated = (narrative.findings || [])
     .map((b) => `<p><strong>${escHtml(b.heading)}:-</strong> ${escHtml(b.text)}</p>`)
@@ -308,7 +468,7 @@ export function buildReportModel(patient, procedure, templateInput, options = {}
 
   const reportNo = makeReportNo(patient, procedure)
 
-  return {
+  const base = {
     template,
     title,
     short,
@@ -347,6 +507,10 @@ export function buildReportModel(patient, procedure, templateInput, options = {}
     confidentialNote: template.layout.confidentialNote,
     options: { forPrint: !!options.forPrint },
   }
+
+  // The paper-form variant is built from the finished model, so the printer,
+  // the Word exporter and the preview all receive identical content.
+  return { ...base, hospital: buildHospitalForm(base) }
 }
 
 /** Plain-text rendering used by the print window and clipboard copy. */

@@ -280,6 +280,7 @@ export function PlateControls({ model, onLayout, onAutoFill, onClearAll }) {
         onChange={(e) => onLayout?.(e.target.value)}
         title="Picture plate"
       >
+        <option value="form7">7 pictures · 3 on top + 4 right (hospital form)</option>
         <option value="grid4">4 pictures · 2 × 2</option>
         <option value="grid6">6 pictures · 2 × 3</option>
         <option value="flow">All pictures · flowing rows</option>

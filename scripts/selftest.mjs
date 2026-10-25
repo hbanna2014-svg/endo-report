@@ -9,7 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 import { analyse, emptyProcedure, findingsForSection } from '../src/lib/autoReport.js'
-import { buildImagePlan, buildReportModel, imageLayoutDef, renderPlainText } from '../src/lib/reportModel.js'
+import { buildImagePlan, buildReportModel, imageLayoutDef, renderPlainText, DEFAULT_TEMPLATE, buildHospitalForm } from '../src/lib/reportModel.js'
 import { buildPrintHtml } from '../src/lib/printHtml.js'
 import { sectionsForProcedure } from '../src/lib/anatomy.js'
 
@@ -370,6 +370,92 @@ check('a mac dmg is not offered to Windows users', !updater.isInstallableAsset('
 check('version comparison sees 0.2.0 < 0.3.0', updater.compareVersions('0.2.0', '0.3.0') === -1)
 check('version comparison sees v0.3.0 == 0.3.0', updater.compareVersions('v0.3.0', '0.3.0') === 0)
 check('version comparison handles 0.10.0 > 0.9.0', updater.compareVersions('0.10.0', '0.9.0') === 1)
+
+
+/* ========================================================================== */
+console.log('\n=== 11. Hospital paper form ===\n')
+
+const hospitalTemplate = {
+  ...DEFAULT_TEMPLATE,
+  id: 'hospital',
+  name: 'Hospital paper form',
+  layout: { ...DEFAULT_TEMPLATE.layout, style: 'hospital', imageLayout: 'form7' },
+  clinic: {
+    ...DEFAULT_TEMPLATE.clinic,
+    name: 'IBN SINA MEDICAL COLLEGE HOSPITAL',
+    address: '1/1-B, Kallyanpur, Mirpur Road, Dhaka-1216',
+  },
+}
+
+const hospitalProcedure = {
+  ...emptyProcedure('ogd'),
+  procedureDate: '2026-10-17',
+  scopeModel: 'OLYMPUS CV-1500',
+  medication: '2% Jascocaine jelly',
+  bed: 'OPD',
+  performingDoctor: 'Dr. Reazuddin Danish',
+  performingDoctorDegrees: 'MD (Gastroenterology)',
+  performingDoctorDesignation: 'Asst. Prof.',
+  complications: 'None.',
+  biopsy: { taken: false, sites: '', count: '' },
+  entries: [
+    { uid: 'h1', sectionId: 'oesophagus', findingId: 'normal_oesophagus', values: {}, notes: '' },
+    { uid: 'h2', sectionId: 'antrum', findingId: 'antral_gastritis_erythematous', values: { extent: 'patchy antral' }, notes: '' },
+    { uid: 'h3', sectionId: 'body', findingId: 'normal_body', values: {}, notes: '' },
+  ],
+  comments: 'Antral Gastritis',
+}
+
+const hospitalPatient = {
+  id: 'hosp-1',
+  regNo: '00053211',
+  identityNo: '00053211',
+  visitId: 'C1853940',
+  name: 'SAROWER HOSSAIN',
+  age: '70',
+  ageUnit: 'years',
+  sex: 'Female',
+  referredBy: 'Dr. Mohammed Reazuddin Danish',
+  history: 'N/A',
+}
+
+const hModel = buildReportModel(hospitalPatient, hospitalProcedure, hospitalTemplate)
+const form = hModel.hospital
+
+check('hospital spec is attached to the model', !!form)
+check('identity and visit numbers are combined', form.rows[0][0].value === '00053211   C1853940', form.rows[0][0].value)
+check('visit date is printed in the long form', form.rows[0][1].value === '17 October, 2026', form.rows[0][1].value)
+check('instrument comes from the scope field', form.rows[2][1].value === 'OLYMPUS CV-1500')
+check('bed defaults to OPD', form.rows[3][1].value === 'OPD')
+check('procedure line names the OGD', /UPPER G\.I\. TRACT ENDOSCOPY/.test(form.procedure))
+check('medication is printed', form.medication === '2% Jascocaine jelly')
+check('comments come from the override', form.comments.join(' ') === 'Antral Gastritis')
+
+const headings = form.findings.map((f) => f.heading)
+check('findings are grouped by organ', headings.join(',') === 'Oesophagus,Stomach,Biopsy', headings.join(','))
+const stomach = form.findings.find((f) => f.heading === 'Stomach')
+check('normal segment text is dropped when the organ is abnormal', !/was normal/i.test(stomach.text), stomach.text)
+check('biopsy row says not taken', form.findings.find((f) => f.heading === 'Biopsy').text === 'Not taken.')
+check('picture plate holds seven slots', hModel.imagePlan.capacity === 7)
+
+const hHtml = buildPrintHtml(hModel)
+check('hospital print HTML is produced', hHtml.includes('ENDOSCOPIC PROCEDURE REPORT'))
+check('print HTML prints the hospital name', hHtml.includes('IBN SINA MEDICAL COLLEGE HOSPITAL'))
+check('print HTML prints identity numbers', hHtml.includes('C1853940'))
+check('print HTML has the identity grid labels', hHtml.includes('Identity No.') && hHtml.includes('Age / Sex'))
+check('print HTML prints the findings heading font-style', hHtml.includes('Oesophagus:-'))
+check('print HTML prints the comments', hHtml.includes('COMMENTS'))
+check('print HTML has a top row of three pictures', (hHtml.match(/class="top3"/g) || []).length === 1)
+check('print HTML has the right-hand column', hHtml.includes('class="side4"'))
+check('print HTML keeps the signature block', hHtml.includes('hf') === false && hHtml.includes('class="sign"'))
+
+const hTmp = path.join(os.tmpdir(), `endoreport-hospital-${Date.now()}.docx`)
+await docx.saveDocx(hModel, hTmp)
+const hSize = fs.statSync(hTmp).size
+const hMagic = fs.readFileSync(hTmp).subarray(0, 2).toString('latin1')
+check('hospital Word document written', hSize > 5000, `${hSize} bytes`)
+check('hospital Word document is a valid OOXML zip', hMagic === 'PK')
+fs.unlinkSync(hTmp)
 
 /* ========================================================================== */
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}\n`)

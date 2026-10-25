@@ -25,6 +25,8 @@ function nl2p(text) {
 export function buildPrintHtml(model) {
   // A report that came from the clinic's own Word file prints as that file.
   if (model?.reportDoc?.custom) return buildDocPrintHtml(model)
+  // The unit's own paper form (letterhead, patient grid, 3 + 4 pictures).
+  if ((model?.template?.layout?.style || 'standard') === 'hospital') return buildHospitalPrintHtml(model)
 
   const t = model.template
   const c = t.clinic
@@ -332,4 +334,233 @@ export function buildDocPrintHtml(model) {
   @media print { .sheet { max-width: none; } }
 </style></head>
 <body><div class="sheet">${model.reportDoc.html}</div></body></html>`
+}
+
+/* -------------------------------------------------------------------------- */
+/* Hospital paper form                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Reproduces the endoscopy unit's own printed form: letterhead, the identity /
+ * visit / patient / instrument grid, the "ENDOSCOPIC PROCEDURE REPORT" band,
+ * three pictures across the top, four down the right-hand column, the findings
+ * and comments on the left, and the endoscopist's signature block.
+ *
+ * Every value comes from `model.hospital`, the same object the Word exporter and
+ * the on-screen preview use.
+ */
+export function buildHospitalPrintHtml(model) {
+  const f = model.hospital
+  if (!f) return ''
+  const layout = model.template.layout || {}
+  const font = layout.fontFamily || 'Arial'
+
+  const figure = (m, cls = '') => `<figure class="${cls}">
+      ${m.dataUrl ? `<img src="${m.dataUrl}" alt="">` : '<div class="noimg">No Preview Available</div>'}
+      <figcaption>${esc(m.caption && m.caption !== '(no caption)' ? m.caption : '(Image Title)')}</figcaption>
+    </figure>`
+
+  const grid = f.rows
+    .map(
+      ([left, right]) => `<tr>
+        <td class="k">${esc(left.label)}</td>
+        <td class="v">${esc(left.value)}</td>
+        <td class="k2">${esc(right.label)}</td>
+        <td class="v2">${esc(right.value)}</td>
+      </tr>`,
+    )
+    .join('')
+
+  const findings = f.findings
+    .map(
+      (b) =>
+        `<p class="fb"><b><i>${esc(b.heading)}:-</i></b> ${esc(b.text)}</p>`,
+    )
+    .join('')
+
+  const comments = f.comments.length
+    ? `<div class="comments"><span class="lbl">COMMENTS :</span> ${f.comments.map(esc).join('<br>')}</div>`
+    : ''
+
+  const header = `
+    <div class="lh">
+      ${f.header.logo ? `<img class="logo" src="${f.header.logo}" alt="">` : ''}
+      <div class="lh-txt">
+        <div class="h-name">${esc(f.header.name)}</div>
+        ${f.header.address ? `<div class="h-addr">${esc(f.header.address)}</div>` : ''}
+        ${f.header.phones ? `<div class="h-phone">${esc(f.header.phones)}</div>` : ''}
+      </div>
+    </div>
+    <table class="pgrid">${grid}</table>`
+
+  const sideFigures = f.side.map((m) => figure(m, 'side')).join('')
+
+  /* Optional trailing picture sheet: six frames on a 2 x 3 plate. */
+  let extraSheets = ''
+  if (layout.extraImageSheet) {
+    const all = (model.media || []).filter((m) => m.kind === 'image')
+    for (let i = 0; i < all.length; i += 6) {
+      const chunk = all.slice(i, i + 6)
+      extraSheets += `<div class="sheet">
+        ${header}
+        <div class="band"><h1>${esc(f.title)}</h1></div>
+        <div class="plus-row">
+          ${[1, 2, 3, 4, 6].map((n) => `<span class="plus"><i class="${n === 6 ? 'on' : ''}"></i> Image Plus ${n}</span>`).join('')}
+        </div>
+        <div class="plate6">
+          ${Array.from({ length: 6 })
+            .map((_, k) => (chunk[k] ? figure({ ...chunk[k], dataUrl: chunk[k].dataUrl }) : `<figure class="empty"><div class="noimg">No Preview Available</div></figure>`))
+            .join('')}
+        </div>
+      </div>`
+    }
+  }
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>${esc(model.reportNo)} — ${esc(model.patientLine.name)}</title>
+<style>
+  @page { size: A4 portrait; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body {
+    font-family: ${font}, "Segoe UI", Arial, sans-serif;
+    color: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .sheet {
+    position: relative;
+    width: 210mm;
+    min-height: 297mm;
+    padding: 6mm 7mm 9mm;
+    page-break-after: always;
+    overflow: hidden;
+  }
+  .sheet:last-child { page-break-after: auto; }
+
+  /* letterhead ---------------------------------------------------------- */
+  .lh { display: flex; align-items: center; gap: 5mm; padding-bottom: 1.6mm; }
+  .lh .logo { width: 23mm; height: 23mm; object-fit: contain; flex: 0 0 23mm; }
+  .lh-txt { flex: 1; text-align: center; }
+  .h-name { font-size: 16.5pt; font-weight: 800; letter-spacing: .1px; line-height: 1.12; }
+  .h-addr { font-size: 10pt; font-weight: 700; margin-top: .5mm; }
+  .h-phone { font-size: 7.8pt; margin-top: .5mm; }
+
+  /* patient grid -------------------------------------------------------- */
+  table.pgrid { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  table.pgrid td {
+    border: 1px solid #000;
+    padding: 1.05mm 1.6mm;
+    font-size: 8.5pt;
+    line-height: 1.2;
+    vertical-align: middle;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  td.k { width: 16.5%; font-weight: 700; }
+  td.v { width: 33.5%; font-weight: 700; }
+  td.k2 { width: 14.5%; font-weight: 700; }
+  td.v2 { width: 35.5%; }
+
+  /* title band ---------------------------------------------------------- */
+  .band {
+    border-top: 1.3px solid #000;
+    border-bottom: 1.3px solid #000;
+    margin-top: 1.4mm;
+    padding: 1.1mm 0 .9mm;
+    text-align: center;
+  }
+  .band h1 {
+    margin: 0;
+    font-size: 12.5pt;
+    font-weight: 700;
+    letter-spacing: .40em;
+    text-indent: .40em;
+    line-height: 1.1;
+  }
+
+  /* two-column body ----------------------------------------------------- */
+  .cols { display: grid; grid-template-columns: 1fr 56mm; gap: 3.2mm; margin-top: 2.4mm; align-items: start; }
+  .top3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.4mm; }
+
+  figure { margin: 0; }
+  figure img {
+    display: block; width: 100%; background: #000;
+    aspect-ratio: 4 / 3; object-fit: contain;
+  }
+  .top3 figure img { aspect-ratio: 4 / 3; }
+  figcaption { text-align: center; font-size: 6.6pt; margin-top: .7mm; color: #111; }
+  .noimg {
+    display: flex; align-items: center; justify-content: center;
+    aspect-ratio: 4 / 3; background: #eef3f7; color: #6b7280; font-size: 7pt;
+    border: 1px solid #cbd5e1;
+  }
+
+  .side4 { display: grid; gap: 2.4mm; }
+  .side4 figure img { aspect-ratio: 4 / 3; }
+
+  /* text ---------------------------------------------------------------- */
+  .line { margin: 2.6mm 0 0; font-size: 9pt; line-height: 1.3; }
+  .lbl { font-weight: 700; }
+  .fh { font-weight: 700; font-size: 9.4pt; margin: 3.2mm 0 1mm; }
+  .fb { margin: 0 0 1.5mm; font-size: 8.9pt; line-height: 1.3; text-align: justify; }
+  .fb b i { font-weight: 700; }
+  .comments { margin-top: 3.4mm; font-size: 9pt; line-height: 1.35; }
+
+  /* signature ----------------------------------------------------------- */
+  .sign { position: absolute; left: 7mm; bottom: 9mm; width: 88mm; }
+  .sign .nm {
+    font-size: 10pt; font-weight: 700; font-style: italic;
+    border-top: .7px solid #000; padding-top: 1mm;
+  }
+  .sign .dg { font-size: 7.4pt; line-height: 1.28; }
+  .sign .af { font-size: 7.4pt; font-style: italic; font-weight: 700; margin-top: .5mm; }
+
+  /* picture sheet ------------------------------------------------------- */
+  .plus-row { display: flex; gap: 6mm; justify-content: center; margin: 1.4mm 0 1.6mm; font-size: 7.6pt; }
+  .plus { display: inline-flex; align-items: center; gap: 1.2mm; }
+  .plus i {
+    width: 2.6mm; height: 2.6mm; border: .8px solid #000; border-radius: 50%;
+    display: inline-block;
+  }
+  .plus i.on { background: #000; box-shadow: inset 0 0 0 1px #fff; }
+  .plate6 { display: grid; grid-template-columns: 1fr 1fr; gap: 2.6mm; }
+  .plate6 figure { break-inside: avoid; }
+  .plate6 figure img { aspect-ratio: 4 / 3; }
+  .plate6 figure.empty .noimg { aspect-ratio: 4 / 3; }
+</style>
+</head>
+<body>
+  <div class="sheet">
+    ${header}
+    <div class="band"><h1>${esc(f.title)}</h1></div>
+    <div class="cols">
+      <div class="col-left">
+        <div class="top3">${f.top.map((m) => figure(m)).join('')}</div>
+        <p class="line"><span class="lbl">Procedure :</span> <span class="val">${esc(f.procedure)}</span></p>
+        <p class="line"><span class="lbl">Indication :</span> <span class="val">${esc(f.indication)}</span></p>
+        <p class="line"><span class="lbl">Medication :</span> <span class="val">${esc(f.medication)}</span></p>
+        <div class="fh">FINDINGS :</div>
+        ${findings}
+        ${comments}
+      </div>
+      <div class="col-right">
+        <div class="side4">${sideFigures}</div>
+      </div>
+    </div>
+
+    <div class="sign">
+      <div class="nm">${esc(f.signature.name || '\u00a0')}</div>
+      ${f.signature.degrees ? `<div class="dg">${esc(f.signature.degrees)}</div>` : ''}
+      ${f.signature.designation ? `<div class="dg">${esc(f.signature.designation)}</div>` : ''}
+      ${f.signature.affiliation ? `<div class="af">${esc(f.signature.affiliation)}</div>` : ''}
+    </div>
+  </div>
+  ${extraSheets}
+</body>
+</html>`
 }

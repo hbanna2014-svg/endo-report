@@ -237,13 +237,17 @@ async function run() {
 
   const migrated = await db.migrate()
   check('legacy v1 database is detected', migrated.from === 1, JSON.stringify(migrated))
-  check('migration reached the current schema version', migrated.to === db.SCHEMA_VERSION && migrated.to === 2)
-  check('one migration step was applied', migrated.applied.length === 1, JSON.stringify(migrated.applied))
+  check('migration reached the current schema version', migrated.to === db.SCHEMA_VERSION)
+  check('every pending migration step was applied', migrated.applied.length === db.SCHEMA_VERSION - 1, JSON.stringify(migrated.applied))
 
   const mediaCols = await db.q(`SELECT column_name FROM information_schema.columns WHERE table_name = 'media'`)
   check('media.thumb_path exists after migration', mediaCols.some((c) => c.column_name === 'thumb_path'))
   const procCols = await db.q(`SELECT column_name FROM information_schema.columns WHERE table_name = 'procedures'`)
   check('procedures.finalised_at exists after migration', procCols.some((c) => c.column_name === 'finalised_at'))
+
+  const patientCols = await db.q(`SELECT column_name FROM information_schema.columns WHERE table_name = 'patients'`)
+  check('patients.identity_no added by migration 3', patientCols.some((c) => c.column_name === 'identity_no'))
+  check('patients.visit_id added by migration 3', patientCols.some((c) => c.column_name === 'visit_id'))
 
   const stillThere = await db.listProcedures({ patientId: patient.id })
   check('records survive the migration', stillThere.length === 1, `${stillThere.length} found`)
@@ -251,7 +255,7 @@ async function run() {
   check('final reports are back-filled with a finalisation timestamp', !!backfilled[0]?.finalised_at)
 
   const again = await db.migrate()
-  check('running the migration twice is a no-op', again.from === 2 && again.applied.length === 0)
+  check('running the migration twice is a no-op', again.from === db.SCHEMA_VERSION && again.applied.length === 0)
 
   console.log('\n--- 8. Upgrade safety (marker + pre-upgrade copy) ---')
   const lifecycle = require('../electron/lifecycle.cjs')

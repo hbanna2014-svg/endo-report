@@ -562,15 +562,349 @@ function buildDocument(model) {
 }
 
 /** Loads every image file referenced by the model into memory. */
+
+/* -------------------------------------------------------------------------- */
+/* Hospital paper form                                                        */
+/* -------------------------------------------------------------------------- */
+
+const BLACK_BORDER = { style: BorderStyle.SINGLE, size: 4, color: '000000' }
+const BLACK_ALL = {
+  top: BLACK_BORDER, bottom: BLACK_BORDER, left: BLACK_BORDER, right: BLACK_BORDER,
+  insideHorizontal: BLACK_BORDER, insideVertical: BLACK_BORDER,
+}
+
+/** Twips (1/1440 inch) → the pixel units docx uses for image sizing. */
+const mmToPx = (mm) => Math.round((mm / 25.4) * 96)
+
+function hospitalImage(buf, widthMm) {
+  if (!buf) return null
+  return makeImageRun(buf, mmToPx(widthMm), mmToPx((widthMm * 3) / 4))
+}
+
+function cell(text, opts = {}) {
+  const { bold, italic, size = 17, width, borders = BLACK_BORDER, align, spacing } = opts
+  return new TableCell({
+    width: width ? { size: width, type: WidthType.DXA } : undefined,
+    borders,
+    margins: { top: 40, bottom: 40, left: 70, right: 70 },
+    verticalAlign: VerticalAlign.CENTER,
+    children: [
+      new Paragraph({
+        alignment: align,
+        spacing: spacing || { before: 0, after: 0 },
+        children: [
+          new TextRun({
+            text: text === undefined || text === null ? '' : String(text),
+            bold: !!bold,
+            italics: !!italic,
+            size,
+            font: 'Arial',
+          }),
+        ],
+      }),
+    ],
+  })
+}
+
+function figureParagraph(buf, caption, widthMm) {
+  const run = hospitalImage(buf, widthMm)
+  return [
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 0, after: 0 },
+      children: run
+        ? [run]
+        : [new TextRun({ text: 'No Preview Available', size: 14, color: '6B7280', font: 'Arial' })],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 20, after: 90 },
+      children: [new TextRun({ text: caption || '(Image Title)', size: 13, font: 'Arial' })],
+    }),
+  ]
+}
+
+/**
+ * Word version of the unit's paper form. Built from `model.hospital`, the same
+ * object the printer and the on-screen preview use.
+ */
+function buildHospitalDocument(model) {
+  const f = model && model.hospital
+  if (!f) return buildDocument(model)
+
+  const byId = new Map((model.media || []).map((m) => [m.id, m]))
+  const bufFor = (m) => (m ? byId.get(m.id)?.__buffer || null : null)
+
+  /* letterhead ---------------------------------------------------------- */
+  let logoRun = null
+  if (f.header.logo) {
+    const m = /^data:image\/(png|jpe?g);base64,(.+)$/i.exec(f.header.logo)
+    if (m) {
+      const buf = Buffer.from(m[2], 'base64')
+      logoRun = makeImageRun(buf, mmToPx(23), mmToPx(23))
+    }
+  }
+
+  const letterhead = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: { top: NO_BORDER, bottom: NO_BORDER, left: NO_BORDER, right: NO_BORDER, insideHorizontal: NO_BORDER, insideVertical: NO_BORDER },
+    columnWidths: [1300, 9600],
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: 1300, type: WidthType.DXA },
+            borders: NO_BORDER,
+            verticalAlign: VerticalAlign.CENTER,
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: logoRun ? [logoRun] : [new TextRun({ text: '', size: 2 })],
+              }),
+            ],
+          }),
+          new TableCell({
+            width: { size: 9600, type: WidthType.DXA },
+            borders: NO_BORDER,
+            verticalAlign: VerticalAlign.CENTER,
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                spacing: { after: 20 },
+                children: [new TextRun({ text: f.header.name, bold: true, size: 33, font: 'Arial' })],
+              }),
+              f.header.address
+                ? new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    spacing: { after: 20 },
+                    children: [new TextRun({ text: f.header.address, bold: true, size: 20, font: 'Arial' })],
+                  })
+                : null,
+              f.header.phones
+                ? new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    spacing: { after: 0 },
+                    children: [new TextRun({ text: f.header.phones, size: 15, font: 'Arial' })],
+                  })
+                : null,
+            ].filter(Boolean),
+          }),
+        ],
+      }),
+    ],
+  })
+
+  /* patient grid -------------------------------------------------------- */
+  const gridRows = f.rows.map(
+    ([left, right]) =>
+      new TableRow({
+        children: [
+          cell(left.label, { bold: true, width: 1850 }),
+          cell(left.value, { bold: true, width: 3750 }),
+          cell(right.label, { bold: true, width: 1600 }),
+          cell(right.value, { width: 3900 }),
+        ],
+      }),
+  )
+
+  const patientGrid = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    columnWidths: [1850, 3750, 1600, 3900],
+    borders: BLACK_ALL,
+    rows: gridRows,
+  })
+
+  /* title band ---------------------------------------------------------- */
+  const band = new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { before: 90, after: 90 },
+    border: {
+      top: { style: BorderStyle.SINGLE, size: 8, color: '000000', space: 3 },
+      bottom: { style: BorderStyle.SINGLE, size: 8, color: '000000', space: 3 },
+    },
+    children: [
+      new TextRun({ text: f.title, bold: true, size: 25, characterSpacing: 80, font: 'Arial' }),
+    ],
+  })
+
+  /* pictures ------------------------------------------------------------ */
+  const topRow = new TableRow({
+    children: [0, 1, 2].map((i) => {
+      const m = f.top[i]
+      return new TableCell({
+        width: { size: 2500, type: WidthType.DXA },
+        borders: NO_BORDER,
+        margins: { top: 0, bottom: 40, left: 40, right: 40 },
+        children: m ? figureParagraph(bufFor(m), m.caption, 44) : figureParagraph(null, '', 44),
+      })
+    }),
+  })
+  const topTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    columnWidths: [2500, 2500, 2500],
+    borders: { top: NO_BORDER, bottom: NO_BORDER, left: NO_BORDER, right: NO_BORDER, insideHorizontal: NO_BORDER, insideVertical: NO_BORDER },
+    rows: [topRow],
+  })
+
+  const sideCellChildren = []
+  for (let i = 0; i < 4; i += 1) {
+    const m = f.side[i]
+    sideCellChildren.push(...figureParagraph(bufFor(m), m ? m.caption : '', 56))
+  }
+
+  /* text column --------------------------------------------------------- */
+  const line = (label, value) =>
+    new Paragraph({
+      spacing: { before: 90, after: 20 },
+      children: [
+        new TextRun({ text: `${label} `, bold: true, size: 18, font: 'Arial' }),
+        new TextRun({ text: value || '', size: 18, font: 'Arial' }),
+      ],
+    })
+
+  const findingsChildren = [
+    new Paragraph({
+      spacing: { before: 120, after: 40 },
+      children: [new TextRun({ text: 'FINDINGS :', bold: true, size: 19, font: 'Arial' })],
+    }),
+    ...f.findings.map(
+      (b) =>
+        new Paragraph({
+          spacing: { before: 0, after: 50 },
+          children: [
+            new TextRun({ text: `${b.heading}:-`, bold: true, italics: true, size: 18, font: 'Arial' }),
+            new TextRun({ text: `  ${b.text}`, size: 18, font: 'Arial' }),
+          ],
+        }),
+    ),
+  ]
+
+  const commentChildren = f.comments.length
+    ? [
+        new Paragraph({
+          spacing: { before: 140, after: 20 },
+          children: [
+            new TextRun({ text: 'COMMENTS : ', bold: true, size: 18, font: 'Arial' }),
+            new TextRun({ text: f.comments[0] || '', size: 18, font: 'Arial' }),
+          ],
+        }),
+        ...f.comments.slice(1).map(
+          (c) =>
+            new Paragraph({
+              spacing: { before: 0, after: 0 },
+              indent: { left: 1450 },
+              children: [new TextRun({ text: c, size: 18, font: 'Arial' })],
+            }),
+        ),
+      ]
+    : []
+
+  const body = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    columnWidths: [7700, 3120],
+    borders: { top: NO_BORDER, bottom: NO_BORDER, left: NO_BORDER, right: NO_BORDER, insideHorizontal: NO_BORDER, insideVertical: NO_BORDER },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: 7700, type: WidthType.DXA },
+            borders: NO_BORDER,
+            margins: { top: 0, bottom: 0, left: 0, right: 140 },
+            children: [
+              topTable,
+              line('Procedure :', f.procedure),
+              line('Indication :', f.indication),
+              line('Medication :', f.medication),
+              ...findingsChildren,
+              ...commentChildren,
+            ],
+          }),
+          new TableCell({
+            width: { size: 3120, type: WidthType.DXA },
+            borders: NO_BORDER,
+            margins: { top: 0, bottom: 0, left: 0, right: 0 },
+            children: sideCellChildren,
+          }),
+        ],
+      }),
+    ],
+  })
+
+  /* signature ----------------------------------------------------------- */
+  const signature = [
+    new Paragraph({ spacing: { before: 500 }, children: [] }),
+    new Paragraph({
+      spacing: { before: 0, after: 0 },
+      border: { top: { style: BorderStyle.SINGLE, size: 4, color: '000000', space: 2 } },
+      children: [new TextRun({ text: f.signature.name || ' ', bold: true, italics: true, size: 21, font: 'Arial' })],
+    }),
+    f.signature.degrees
+      ? new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text: f.signature.degrees, size: 15, font: 'Arial' })] })
+      : null,
+    f.signature.designation
+      ? new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text: f.signature.designation, size: 15, font: 'Arial' })] })
+      : null,
+    f.signature.affiliation
+      ? new Paragraph({ spacing: { before: 30, after: 0 }, children: [new TextRun({ text: f.signature.affiliation, bold: true, italics: true, size: 15, font: 'Arial' })] })
+      : null,
+  ]
+
+  const signatureBody = [...signature].filter(Boolean)
+
+  const signatureTable = new Table({
+    width: { size: 58, type: WidthType.PERCENTAGE },
+    borders: { top: NO_BORDER, bottom: NO_BORDER, left: NO_BORDER, right: NO_BORDER, insideHorizontal: NO_BORDER, insideVertical: NO_BORDER },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            borders: NO_BORDER,
+            margins: { top: 0, bottom: 0, left: 0, right: 0 },
+            children: signatureBody,
+          }),
+        ],
+      }),
+    ],
+  })
+
+
+  return new Document({
+    creator: f.header.name || 'EndoReport',
+    title: `${f.title} — ${model.patientLine?.name || ''}`,
+    description: `Report ${model.reportNo}`,
+    styles: { default: { document: { run: { font: 'Arial', size: 18 } } } },
+    sections: [
+      {
+        properties: {
+          page: {
+            size: { width: 11906, height: 16838 },
+            margin: { top: 340, bottom: 510, left: 397, right: 397 },
+          },
+        },
+        children: [letterhead, patientGrid, band, body, signatureTable],
+      },
+    ],
+  })
+}
+
 function attachImageBuffers(model) {
   const media = (model.media || []).map((m) => {
-    if (m.kind !== 'image' || !m.filePath) return m
+    if (m.kind !== 'image') return m
     try {
-      if (fs.existsSync(m.filePath)) {
+      if (m.filePath && fs.existsSync(m.filePath)) {
         return { ...m, __buffer: fs.readFileSync(m.filePath) }
       }
     } catch {
-      /* leave without buffer — document will show a placeholder */
+      /* fall through to the inline copy */
+    }
+    // A report model built for preview carries the picture inline.
+    const inline = /^data:image\/[a-z+]+;base64,(.+)$/i.exec(String(m.dataUrl || ''))
+    if (inline) {
+      try {
+        return { ...m, __buffer: Buffer.from(inline[1], 'base64') }
+      } catch {
+        /* leave without buffer */
+      }
     }
     return m
   })
@@ -579,7 +913,8 @@ function attachImageBuffers(model) {
 
 async function buildDocxBuffer(model) {
   const withImages = attachImageBuffers(model)
-  const doc = buildDocument(withImages)
+  const style = model?.template?.layout?.style || 'standard'
+  const doc = style === 'hospital' ? buildHospitalDocument(withImages) : buildDocument(withImages)
   return Packer.toBuffer(doc)
 }
 
