@@ -4,6 +4,20 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.3 — 2026-10-25
+
+### Changed
+
+- **New Patient** now follows the unit's original dialog exactly: a right-aligned label column
+  with Patient Name · Age / Sex (age field + Male/Female radios) · MRN | Bed · Procedure ·
+  Referrer · Doctor · Indication, a rule, then Visit Date · Address · Town | State ·
+  Post Code | Phone.
+- Doctor and referrer keep the **+** picker; the procedure field keeps the red **×** clear button.
+- Hospital identity, visit/file number, assistant, history, allergy, medication and notes moved
+  into a collapsed *Report header & clinical details* strip, so the first screen is unchanged
+  from the original while the report still gets everything it prints.
+- Footer is **Close** and **Add**, with **Save & open capture** beside it.
+
 ## 0.5.2 — 2026-10-25
 
 ### Fixed
