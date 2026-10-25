@@ -45,6 +45,21 @@ function compareVersions(a, b) {
   return 0
 }
 
+
+/**
+ * Which release assets are safe to offer as an update?
+ *
+ * A repository also publishes source archives and checksum files; offering one
+ * of those as an "update" would be confusing and, for a source zip, wrong.
+ * Only files that look like a real Windows artefact are installable.
+ */
+function isInstallableAsset(name) {
+  if (!name) return false
+  if (/source|checksums/i.test(name)) return false
+  if (!/^endoreport/i.test(name)) return false
+  return /\.(exe|zip|msi)$/i.test(name)
+}
+
 /* -------------------------------------------------------------------------- */
 /* Release lookup                                                              */
 /* -------------------------------------------------------------------------- */
@@ -97,6 +112,7 @@ async function checkLatest({ owner, repo, currentVersion, includePrerelease = fa
       contentType: a.content_type,
       downloadUrl: a.browser_download_url,
       updatedAt: a.updated_at,
+      installable: isInstallableAsset(a.name),
     }))
 
     return {
@@ -110,6 +126,7 @@ async function checkLatest({ owner, repo, currentVersion, includePrerelease = fa
       prerelease: !!release.prerelease,
       htmlUrl: release.html_url,
       assets,
+      installableCount: assets.filter((a) => a.installable).length,
       checkedAt: new Date().toISOString(),
     }
   } catch (err) {
@@ -238,6 +255,7 @@ async function checksumAssetsFor(checkResult, assetName) {
 
 module.exports = {
   parseVersion,
+  isInstallableAsset,
   compareVersions,
   checkLatest,
   download,

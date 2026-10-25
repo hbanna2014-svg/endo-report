@@ -354,6 +354,23 @@ const noImages = await docxTemplate.renderDocxTemplate(base64, overrideModel, { 
 const noImagesXml = await (await JSZip.loadAsync(noImages)).file('word/document.xml').async('string')
 check('a plate-less report leaves no empty table behind', !/plate/.test(noImagesXml))
 
+
+/* ========================================================================== */
+console.log('\n=== 10. Update artefact selection ===\n')
+
+const updater = require('../electron/updater.cjs')
+
+check('a Setup .exe is installable', updater.isInstallableAsset('EndoReport-Setup-0.3.0.exe'))
+check('the portable Windows zip is installable', updater.isInstallableAsset('EndoReport-Portable-Windows.zip'))
+check('a source archive is never offered as an update', !updater.isInstallableAsset('EndoReport-0.3.0-source.zip'))
+check('checksums are never offered as an update', !updater.isInstallableAsset('checksums.txt'))
+check('an unrelated file is not installable', !updater.isInstallableAsset('notes.pdf'))
+check('a mac dmg is not offered to Windows users', !updater.isInstallableAsset('EndoReport-0.3.0.dmg'))
+
+check('version comparison sees 0.2.0 < 0.3.0', updater.compareVersions('0.2.0', '0.3.0') === -1)
+check('version comparison sees v0.3.0 == 0.3.0', updater.compareVersions('v0.3.0', '0.3.0') === 0)
+check('version comparison handles 0.10.0 > 0.9.0', updater.compareVersions('0.10.0', '0.9.0') === 1)
+
 /* ========================================================================== */
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}\n`)
 process.exit(failures === 0 ? 0 : 1)

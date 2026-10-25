@@ -90,10 +90,11 @@ export default function UpdatesPanel({ meta }) {
       const res = await api.updates.check()
       setCheck(res)
       if (res.ok) {
+        const candidates = (res.assets || []).filter((a) => a.installable !== false)
         const preferred =
-          res.assets?.find((a) => /setup.*\.exe$/i.test(a.name)) ||
-          res.assets?.find((a) => /\.exe$/i.test(a.name)) ||
-          res.assets?.find((a) => /\.zip$/i.test(a.name)) ||
+          candidates.find((a) => /setup.*\.exe$/i.test(a.name)) ||
+          candidates.find((a) => /\.exe$/i.test(a.name)) ||
+          candidates.find((a) => /\.zip$/i.test(a.name)) ||
           null
         setAsset(preferred)
       }
@@ -240,11 +241,22 @@ export default function UpdatesPanel({ meta }) {
                     </pre>
                   ) : null}
 
+                  {check.installableCount === 0 ? (
+                    <div className="banner warn" style={{ marginTop: 8 }}>
+                      <div className="small">
+                        This release does not have a Windows build attached yet — only the source archive. Nothing is
+                        offered for download here so that a source file is never mistaken for an installer. Build it on a
+                        Windows machine with <span className="mono">npm run dist</span> and upload the artefact to the
+                        release.
+                      </div>
+                    </div>
+                  ) : null}
+
                   {check.assets?.length ? (
                     <div style={{ marginTop: 10 }}>
                       <div className="tiny muted" style={{ marginBottom: 4 }}>Choose the file to download:</div>
                       {check.assets
-                        .filter((a) => /\.(exe|zip)$/i.test(a.name))
+                        .filter((a) => a.installable !== false)
                         .map((a) => (
                           <label
                             key={a.name}
