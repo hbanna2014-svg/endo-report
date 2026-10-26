@@ -40,7 +40,7 @@ import { sectionsForProcedure, PROCEDURE_TYPES } from '../lib/anatomy.js'
 import { buildReportModel, renderPlainText, imageLayoutDef } from '../lib/reportModel.js'
 import { buildPrintHtml, buildImagePlusHtml } from '../lib/printHtml.js'
 import { hydratePrintImages } from '../lib/printImages.js'
-import useCapture, { fmtDuration } from '../lib/useCapture.js'
+import useCapture, { fmtDuration, closeWarmStream } from '../lib/useCapture.js'
 
 import FindingsPanel from './FindingsPanel.jsx'
 import DetailsPanel from './DetailsPanel.jsx'
@@ -403,8 +403,15 @@ export default function Workspace({
     setMedia,
     activeSection,
     procedure,
+    // Open the card as soon as the report opens, not when the operator first
+    // presses Capture: the video processor needs a moment to lock its signal,
+    // and paying that while the console is already on screen feels instant.
+    autoStart: true,
     onCaptured: (rec) => captureHandler.current(rec),
   })
+
+  // The card stays warm while switching tabs; leaving the patient closes it.
+  useEffect(() => () => closeWarmStream(), [])
 
   /* ------------------------------------------------------ picture plate edits --- */
 

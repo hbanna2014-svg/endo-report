@@ -30,6 +30,16 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
   one with a "continued on the next page" line, and the whole note prints on page two —
   nothing is cut off mid-sentence.
 
+### Capture starts instantly
+
+- The capture card is opened as soon as a procedure is opened, not when Capture is first
+  pressed, so the live picture is already running when the console appears.
+- The stream stays open while moving between Live console, Findings and Procedure details.
+  Leaving the screen used to close the device, so every return paid the card's one-to-two
+  second start-up again; leaving the patient (or pressing Stop) closes it.
+- The picture is shown the moment the stream attaches instead of waiting for `play()` to
+  resolve, and the frame size is read from the first decoded frame.
+
 ### Word report
 
 - The **REPORT** panel now has a **Word template** row. Upload the clinic's own `.docx` and

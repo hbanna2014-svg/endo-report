@@ -87,6 +87,29 @@ function trimDarkBorder(source) {
   return { canvas: out, cropped: true, box: { left, top, right, bottom } }
 }
 
+/**
+ * The capture card stays open across tab switches.
+ *
+ * Opening a video processor is the slow part — the card renegotiates its HDMI
+ * mode and can take a second or two before the first frame arrives. The stream
+ * used to be closed whenever the console was left, so every return paid that
+ * cost again. It is now held here, outside React, and re-attached instantly;
+ * only leaving the patient, pressing Stop or changing device closes it.
+ */
+const warm = { stream: null, deviceId: '' }
+
+function streamIsLive(stream) {
+  return !!stream && stream.getVideoTracks().some((t) => t.readyState === 'live')
+}
+
+export function closeWarmStream() {
+  if (warm.stream) {
+    warm.stream.getTracks().forEach((t) => t.stop())
+    warm.stream = null
+    warm.deviceId = ''
+  }
+}
+
 export function fmtDuration(sec) {
   if (!sec && sec !== 0) return ''
   const s = Math.round(Number(sec))
@@ -161,10 +184,34 @@ export default function useCapture({
       streamRef.current = null
     }
     if (videoRef.current) videoRef.current.srcObject = null
+    closeWarmStream()
     setLive(false)
   }, [])
 
-  useEffect(() => () => stopStream(), [stopStream])
+  /** Leaving the screen must not close the card — only detach the picture. */
+  useEffect(
+    () => () => {
+      if (videoRef.current) videoRef.current.srcObject = null
+    },
+    [],
+  )
+
+  /* Re-attach a stream that is still open, so the picture is on screen in the
+     same frame the console appears. */
+  useEffect(() => {
+    const stream = warm.stream
+    const wanted = warm.deviceId
+    if (!streamIsLive(stream)) return
+    if (deviceId && wanted && wanted !== deviceId) return
+    streamRef.current = stream
+    const el = videoRef.current
+    if (!el) return
+    el.srcObject = stream
+    setLive(true)
+    el.play().catch(() => {})
+    const settings = stream.getVideoTracks()[0]?.getSettings?.()
+    if (settings?.width) setFrameSize({ width: settings.width, height: settings.height })
+  }, [deviceId])
 
   const startStream = useCallback(async () => {
     setError('')
@@ -182,14 +229,32 @@ export default function useCapture({
       }
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
       streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play().catch(() => {})
-        const track = stream.getVideoTracks()[0]
-        const settings = track?.getSettings ? track.getSettings() : null
-        if (settings?.width) setFrameSize({ width: settings.width, height: settings.height })
+      warm.stream = stream
+      warm.deviceId = deviceId || ''
+      const track = stream.getVideoTracks()[0]
+      const settings = track?.getSettings ? track.getSettings() : null
+      if (settings?.width) setFrameSize({ width: settings.width, height: settings.height })
+
+      const el = videoRef.current
+      if (el) {
+        el.srcObject = stream
+        // Show the element as soon as the stream is attached: waiting for
+        // play() to resolve made the console sit on a black rectangle for the
+        // second or two the card needs to settle.
+        setLive(true)
+        void el.play().catch(() => {})
+        if (!settings?.width) {
+          el.addEventListener(
+            'loadedmetadata',
+            () => {
+              if (el.videoWidth) setFrameSize({ width: el.videoWidth, height: el.videoHeight })
+            },
+            { once: true },
+          )
+        }
+      } else {
+        setLive(true)
       }
-      setLive(true)
       refreshDevices()
     } catch (err) {
       stopStream()
