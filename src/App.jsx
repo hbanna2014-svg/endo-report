@@ -13,6 +13,8 @@ import {
   Activity,
   MonitorSmartphone,
   RefreshCw,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 
 import { api, isDesktop } from './lib/api.js'
@@ -40,6 +42,7 @@ const NAV = [
 export default function App() {
   const toast = useToast()
   const [view, setView] = useState('dashboard')
+  const [navOpen, setNavOpen] = useState(true)
   const [meta, setMeta] = useState(null)
   const [templates, setTemplates] = useState([])
   const [doctors, setDoctors] = useState([])
@@ -137,6 +140,13 @@ export default function App() {
     }
   }, [refreshLookups])
 
+  // The procedure workspace is the screen the endoscopist works on: fold the
+  // menu down to icons so the live image and the report get the width.
+  useEffect(() => {
+    setNavOpen(view !== 'workspace')
+  }, [view])
+
+
   /* ------------------------------------------------------------ menu wiring --- */
 
   useEffect(() => {
@@ -223,14 +233,23 @@ export default function App() {
   const sections = [...new Set(NAV.map((n) => n.section))]
 
   return (
-    <div className="app">
-      <nav className="nav">
+    <div className={`app${navOpen ? '' : ' nav-collapsed'}`}>
+      <nav className={navOpen ? 'nav' : 'nav collapsed'}>
         <div className="nav-brand">
           <div className="nav-logo">ER</div>
           <div className="nav-brand-text">
             <strong>EndoReport</strong>
             <span>Offline reporting</span>
           </div>
+          <button
+            type="button"
+            className="nav-toggle"
+            onClick={() => setNavOpen((v) => !v)}
+            title={navOpen ? 'Collapse the menu' : 'Expand the menu'}
+            aria-label={navOpen ? 'Collapse the menu' : 'Expand the menu'}
+          >
+            {navOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+          </button>
         </div>
 
         {sections.map((section) => (

@@ -18,12 +18,12 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ### Live console
 
-- The **Captured** strip is now a two-column grid of square frames instead of a single
-  column of squashed 4:3 thumbnails. Frames keep a fixed, readable size no matter how many
-  are captured, and the strip scrolls once they no longer fit — 28 frames stay usable
-  instead of shrinking to a row of slivers.
-- The rail is wider (178 px) to fit two frames; the three capture pickers now wrap onto a
-  second row so their labels are no longer truncated to "No capture de".
+- The **Captured** strip is one column of large square frames. Frames keep a fixed size
+  however many are captured, and the strip scrolls with the mouse wheel, so a hundred
+  frames stay readable and clickable instead of shrinking to slivers.
+- Entering the procedure workspace now folds the left menu down to a 66 px icon rail, so
+  the live capture and the report get the width. A chevron button on the menu expands it
+  again at any time; every other screen shows the full menu.
 
 ### Printed pictures
 

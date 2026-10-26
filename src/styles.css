@@ -77,7 +77,10 @@ a { color: var(--brand); }
 
 /* ---------------------------------------------------------------- layout --- */
 
-.app { display: grid; grid-template-columns: 250px 1fr; height: 100vh; overflow: hidden; }
+.app { display: grid; grid-template-columns: 250px 1fr; height: 100vh; overflow: hidden; transition: grid-template-columns .16s ease; }
+/* The workspace is the working screen: the menu folds down to icons so the
+   live image and the report get the width. */
+.app.nav-collapsed { grid-template-columns: 66px 1fr; }
 .app.no-nav { grid-template-columns: 1fr; }
 
 .nav {
@@ -92,6 +95,22 @@ a { color: var(--brand); }
 }
 
 .nav-brand { display: flex; align-items: center; gap: 10px; padding: 6px 8px 16px; }
+.nav-toggle {
+  margin-left: auto; width: 22px; height: 22px; display: grid; place-items: center;
+  border: 1px solid rgba(148,163,184,.28); border-radius: 6px; background: rgba(15,23,42,.4);
+  color: #94a3b8; cursor: pointer; flex: 0 0 auto;
+}
+.nav-toggle:hover { color: #fff; border-color: rgba(148,163,184,.6); }
+.nav.collapsed { padding: 12px 6px; }
+.nav.collapsed .nav-brand { flex-direction: column; gap: 10px; padding: 4px 0 14px; }
+.nav.collapsed .nav-brand-text,
+.nav.collapsed .nav-section,
+.nav.collapsed .nav-item > span,
+.nav.collapsed .nav-item .count,
+.nav.collapsed .nav-foot { display: none; }
+.nav.collapsed .nav-item { justify-content: center; padding: 11px 0; }
+.nav.collapsed .nav-item.active { box-shadow: inset 0 0 0 1px rgba(59,130,246,.55); }
+.nav.collapsed .nav-toggle { margin-left: 0; }
 .nav-logo {
   width: 38px; height: 38px; border-radius: 10px;
   background: linear-gradient(135deg, #3b82f6, #06b6d4);
@@ -530,15 +549,14 @@ a { color: var(--brand); }
   font-size: 10.5px; font-weight: 700; color: var(--brand-dark); background: var(--brand-soft);
   border-radius: 999px; padding: 1px 6px;
 }
-/* Two square frames per row. flex-wrap rather than grid: a grid row cannot
-   take its height from a square item when the item also has overflow:hidden,
-   which made the rows overlap by a third of a frame. */
+/* One square frame per row, full width of the rail. The strip scrolls instead
+   of shrinking, so even a hundred frames stay readable and clickable. */
 .rail-list {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  padding: 7px; display: flex; flex-wrap: wrap; gap: 7px;
+  padding: 7px; display: flex; flex-direction: column; gap: 8px;
   align-content: flex-start; scrollbar-gutter: stable;
 }
-.rail-list > .rail-item { flex: 0 0 calc(50% - 3.5px); }
+.rail-list > .rail-item { flex: 0 0 auto; width: 100%; }
 .rail-item {
   position: relative; border-radius: 7px; overflow: hidden; background: #05080f;
   border: 1px solid #1e293b; cursor: zoom-in; aspect-ratio: 1 / 1;
