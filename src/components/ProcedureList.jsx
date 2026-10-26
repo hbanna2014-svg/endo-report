@@ -19,6 +19,7 @@ import {
 import { api } from '../lib/api.js'
 import { buildReportModel } from '../lib/reportModel.js'
 import { buildPrintHtml } from '../lib/printHtml.js'
+import { hydratePrintImages } from '../lib/printImages.js'
 import { PROCEDURE_TYPES } from '../lib/anatomy.js'
 import { Topbar } from './Dashboard.jsx'
 import {
@@ -113,17 +114,14 @@ export default function ProcedureList({ onOpenProcedure, onRefreshStats }) {
     setBusyId(row.id)
     try {
       const model = await buildModelForProcedure(row.id, templates, clinic)
-      const media = await Promise.all(
-        (model.media || []).map(async (m) => {
-          if (m.kind !== 'image') return m
-          try {
-            const { dataUrl } = await api.app.readFileAsDataUrl(m.filePath)
-            return { ...m, dataUrl }
-          } catch {
-            return m
-          }
-        }),
-      )
+      const { media, failed } = await hydratePrintImages(model.media || [], api.app.readFileAsDataUrl)
+      if (failed.length) {
+        toast.push({
+          tone: 'warn',
+          title: `${failed.length} picture(s) could not be attached`,
+          body: 'They will print as blank frames on this report.',
+        })
+      }
       const html = buildPrintHtml({ ...model, media })
       const res = await api.report.print(html, `${model.reportNo} — ${model.patientLine.name}`)
       if (res?.ok === false && res.reason) toast.push({ tone: 'warn', title: 'Printing did not complete', body: res.reason })

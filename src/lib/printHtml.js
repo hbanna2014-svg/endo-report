@@ -152,10 +152,10 @@ export function buildPrintHtml(model) {
   .sheet-split.has-side { display: grid; grid-template-columns: 1fr 58mm; gap: 5mm; align-items: start; }
   .sheet-main { min-width: 0; }
   .sheet-side { display: flex; flex-direction: column; gap: 3.5mm; }
-  .sheet-side figure img { width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #c9d1db; }
+  .sheet-side figure img { width: 100%; height: auto; object-fit: contain; object-position: center; background: #fff; border: 1px solid #9aa6b2; }
   .sheet-side figcaption { text-align: center; }
   .sheet-top { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; margin: 3mm 0 4mm; }
-  .sheet-top figure img { width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #c9d1db; }
+  .sheet-top figure img { width: 100%; height: auto; object-fit: contain; object-position: center; background: #fff; border: 1px solid #9aa6b2; }
   .sheet-top figcaption { text-align: center; }
   .rich-static p { margin: 0 0 5px; text-align: justify; }
   .rich-static ul, .rich-static ol { margin: 4px 0; padding-left: 18px; }
@@ -362,6 +362,11 @@ export function buildHospitalPrintHtml(model) {
   const sideFigures = (f.side || []).map(pick)
   const layout = model.template.layout || {}
   const font = layout.fontFamily || 'Arial'
+  // Picture frame size in millimetres (default 2.5in × 2in — landscape, which
+  // suits both the endoscopic frame and the three-across plate).
+  const picW = Number(layout.pictureW) > 10 ? Number(layout.pictureW) : 63.5
+  const picH = Number(layout.pictureH) > 10 ? Number(layout.pictureH) : 50.8
+  const picFit = layout.pictureFit === 'contain' ? 'contain' : 'cover'
 
   const figure = (m, cls = '') => `<figure class="${cls}">
       ${m.dataUrl ? `<img src="${m.dataUrl}" alt="">` : '<div class="noimg">No Preview Available</div>'}
@@ -462,32 +467,37 @@ export function buildHospitalPrintHtml(model) {
     letter-spacing: .38em; text-indent: .38em; line-height: 1.05;
   }
 
-  /* pictures ------------------------------------------------------------ */
+  /* pictures ------------------------------------------------------------
+     Each frame is the picture on white, held by a single thin rule — no black
+     mat around it. The size comes from the report template so the clinic can
+     match its own paper form without a rebuild. */
+  :root { --pic-w: ${picW}mm; --pic-h: ${picH}mm; --pic-fit: ${picFit}; }
   .top3 {
-    display: grid; grid-template-columns: repeat(3, 55.88mm);
+    display: grid; grid-template-columns: repeat(3, var(--pic-w));
     justify-content: space-between; margin-top: 2mm;
   }
   figure { margin: 0; }
   figure img {
-    display: block; width: 55.88mm; height: 50.8mm;
-    object-fit: contain; background: #000;
+    display: block; width: var(--pic-w); height: var(--pic-h);
+    object-fit: var(--pic-fit); object-position: center;
+    background: #fff; border: .8px solid #000;
   }
   figcaption { text-align: center; font-size: 6.4pt; margin-top: .6mm; color: #111; }
   .noimg {
     display: flex; align-items: center; justify-content: center;
-    width: 55.88mm; height: 50.8mm;
+    width: var(--pic-w); height: var(--pic-h);
     background: #eef3f7; color: #6b7280; font-size: 6.8pt; border: 1px solid #cbd5e1;
   }
 
   /* two columns; the picture column runs to the bottom border ------------ */
   .cols {
-    flex: 1 1 auto; display: grid; grid-template-columns: 1fr 55.88mm;
+    flex: 1 1 auto; display: grid; grid-template-columns: 1fr var(--pic-w);
     gap: 4.5mm; margin-top: 2.2mm; min-height: 0;
   }
   .col-left { min-width: 0; padding-bottom: 24mm; }
   .side4 { display: flex; flex-direction: column; justify-content: space-between; height: 100%; gap: 1.8mm; }
   .side4 figure { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
-  .side4 figure img { width: 55.88mm; flex: 1 1 auto; min-height: 0; height: auto; object-fit: contain; }
+  .side4 figure img { width: var(--pic-w); flex: 1 1 auto; min-height: 0; height: auto; object-fit: var(--pic-fit); object-position: center; background: #fff; border: .8px solid #000; }
   .side4 .noimg { flex: 1 1 auto; height: auto; min-height: 0; }
   .side4 figcaption { flex: 0 0 auto; }
 
@@ -609,7 +619,7 @@ export function buildImagePlusHtml(model, options = {}) {
   .band h1 { margin: 0; font-size: 11.5pt; font-weight: 700; letter-spacing: .34em; text-indent: .34em; }
   .plate { flex: 1 1 auto; display: grid; grid-template-columns: repeat(${cols}, 55.88mm); grid-auto-rows: 50.8mm; justify-content: center; align-content: start; gap: 6mm 8mm; margin-top: 4mm; }
   figure { margin: 0; }
-  figure img { display: block; width: 55.88mm; height: 50.8mm; object-fit: contain; background: #000; }
+  figure img { display: block; width: 55.88mm; height: 50.8mm; object-fit: contain; object-position: center; background: #fff; border: .8px solid #000; }
   figcaption { text-align: center; font-size: 6.6pt; margin-top: .8mm; }
   .noimg { display: flex; align-items: center; justify-content: center; width: 55.88mm; height: 50.8mm; background: #eef3f7; color: #6b7280; font-size: 6.8pt; border: 1px solid #cbd5e1; }
 </style>

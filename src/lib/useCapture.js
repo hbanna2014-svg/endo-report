@@ -27,6 +27,66 @@ function pickMime() {
   return candidates.find((c) => MediaRecorder.isTypeSupported(c)) || ''
 }
 
+/**
+ * Strips a uniform black frame that many capture cards leave around the
+ * endoscopic picture. A line is only removed when it is almost entirely
+ * near-black, and never more than a quarter of the picture from any edge, so a
+ * genuinely dark lumen is never eaten into.
+ */
+function trimDarkBorder(source) {
+  const w = source.width
+  const h = source.height
+  if (w < 48 || h < 48) return { canvas: source, cropped: false }
+
+  const ctx = source.getContext('2d', { willReadFrequently: true })
+  const { data } = ctx.getImageData(0, 0, w, h)
+  const DARK = 20
+  const STEP = 3
+  const isDark = (i) => data[i] < DARK && data[i + 1] < DARK && data[i + 2] < DARK
+
+  const rowDark = (y) => {
+    let dark = 0
+    let n = 0
+    const base = y * w * 4
+    for (let x = 0; x < w; x += STEP) {
+      if (isDark(base + x * 4)) dark += 1
+      n += 1
+    }
+    return n ? dark / n : 1
+  }
+  const colDark = (x) => {
+    let dark = 0
+    let n = 0
+    for (let y = 0; y < h; y += STEP) {
+      if (isDark((y * w + x) * 4)) dark += 1
+      n += 1
+    }
+    return n ? dark / n : 1
+  }
+
+  const limitRow = Math.floor(h * 0.25)
+  const limitCol = Math.floor(w * 0.25)
+  let top = 0
+  let bottom = 0
+  let left = 0
+  let right = 0
+  while (top < limitRow && rowDark(top) > 0.995) top += 1
+  while (bottom < limitRow && rowDark(h - 1 - bottom) > 0.995) bottom += 1
+  while (left < limitCol && colDark(left) > 0.995) left += 1
+  while (right < limitCol && colDark(w - 1 - right) > 0.995) right += 1
+
+  const cw = w - left - right
+  const ch = h - top - bottom
+  if (left + right + top + bottom < 4) return { canvas: source, cropped: false }
+  if (cw < w * 0.4 || ch < h * 0.4) return { canvas: source, cropped: false }
+
+  const out = document.createElement('canvas')
+  out.width = cw
+  out.height = ch
+  out.getContext('2d', { alpha: false }).drawImage(source, left, top, cw, ch, 0, 0, cw, ch)
+  return { canvas: out, cropped: true, box: { left, top, right, bottom } }
+}
+
 export function fmtDuration(sec) {
   if (!sec && sec !== 0) return ''
   const s = Math.round(Number(sec))
@@ -63,6 +123,7 @@ export default function useCapture({
   const [recSeconds, setRecSeconds] = useState(0)
   const [busy, setBusy] = useState(false)
   const [autoCaption, setAutoCaption] = useState(true)
+  const [trimBlack, setTrimBlack] = useState(true)
   const [quality, setQuality] = useState('max')
   const [lastCaptured, setLastCaptured] = useState(null)
   const [frameSize, setFrameSize] = useState(null)
@@ -175,7 +236,14 @@ export default function useCapture({
       ctx.imageSmoothingQuality = 'high'
       ctx.drawImage(video, 0, 0, w, h)
 
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
+      // Drop the black frame the capture card adds, so the printed picture is
+      // the endoscopic image itself and not a letterboxed copy of it.
+      const trimmed = trimBlack ? trimDarkBorder(canvas) : { canvas, cropped: false }
+      const frame = trimmed.canvas
+      const fw = frame.width
+      const fh = frame.height
+
+      const blob = await new Promise((resolve) => frame.toBlob(resolve, 'image/png'))
       if (!blob) {
         toast.push({ tone: 'err', title: 'Could not encode the frame' })
         return null
@@ -194,12 +262,16 @@ export default function useCapture({
           mime: 'image/png',
         })
         setMedia([...mediaRef.current, rec])
-        setLastCaptured({ ...rec, width: w, height: h })
-        setFrameSize({ width: w, height: h })
+        setLastCaptured({ ...rec, width: fw, height: fh })
+        setFrameSize({ width: fw, height: fh })
         toast.push({
           tone: 'ok',
-          title: `Image captured · ${w} × ${h}`,
-          body: autoCaption ? caption : 'Caption it from the picture rail.',
+          title: `Image captured · ${fw} × ${fh}`,
+          body: trimmed.cropped
+            ? `Black border trimmed (was ${w} × ${h}).`
+            : autoCaption
+              ? caption
+              : 'Caption it from the picture rail.',
         })
         onCaptured?.(rec)
         return rec
@@ -210,7 +282,7 @@ export default function useCapture({
         setBusy(false)
       }
     },
-    [activeSection, autoCaption, live, onCaptured, patientId, procedureId, sectionLabel, setMedia, toast],
+    [activeSection, autoCaption, live, onCaptured, patientId, procedureId, sectionLabel, setMedia, toast, trimBlack],
   )
 
   /* ------------------------------------------------------------- recording --- */
@@ -293,6 +365,8 @@ export default function useCapture({
     busy,
     autoCaption,
     setAutoCaption,
+    trimBlack,
+    setTrimBlack,
     quality,
     setQuality,
     lastCaptured,

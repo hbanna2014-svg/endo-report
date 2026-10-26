@@ -24,6 +24,8 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
     busy,
     autoCaption,
     setAutoCaption,
+    trimBlack,
+    setTrimBlack,
     quality,
     setQuality,
     frameSize,
@@ -83,7 +85,16 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
         </div>
       ) : null}
 
-      <div className="capture-stage">
+      {/* The stage follows the capture card's own aspect ratio so the whole
+          frame is visible and centred, with no letterbox bars around it. */}
+      <div
+        className="capture-stage"
+        style={
+          frameSize
+            ? { aspectRatio: `${frameSize.width} / ${frameSize.height}`, maxHeight: compact ? '52vh' : '64vh' }
+            : undefined
+        }
+      >
         <video ref={videoRef} playsInline muted style={{ display: live ? 'block' : 'none' }} />
         {!live ? (
           <div className="placeholder">
@@ -148,6 +159,10 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
         <label className="row small" style={{ gap: 6, cursor: 'pointer' }}>
           <input type="checkbox" checked={autoCaption} onChange={(e) => setAutoCaption(e.target.checked)} />
           Auto-caption with the section name
+        </label>
+        <label className="row small" style={{ gap: 6, cursor: 'pointer' }} title="Removes the black frame some capture cards add around the picture">
+          <input type="checkbox" checked={trimBlack} onChange={(e) => setTrimBlack(e.target.checked)} />
+          Trim black border
         </label>
         <span className="spacer" />
         {!showDevicePicker ? (

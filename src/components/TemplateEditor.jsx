@@ -317,6 +317,39 @@ export default function TemplateEditor({ templates, onChanged }) {
                     )}
                   </div>
                 ) : null}
+                <div className="grid c2" style={{ marginTop: 12 }}>
+                  <Field
+                    label="Printed picture size"
+                    hint="Each frame prints the whole picture on white with a single thin rule — no black mat."
+                  >
+                    <Select
+                      value={`${Number(draft.layout.pictureW) || 63.5}x${Number(draft.layout.pictureH) || 50.8}`}
+                      onChange={(e) => {
+                        const [w, h] = e.target.value.split('x').map(Number)
+                        setDraft((d) => ({ ...d, layout: { ...d.layout, pictureW: w, pictureH: h } }))
+                      }}
+                      options={[
+                        { value: '63.5x50.8', label: '2.5 × 2 in — 63.5 × 50.8 mm' },
+                        { value: '50.8x63.5', label: '2 × 2.5 in — 50.8 × 63.5 mm' },
+                        { value: '55.88x50.8', label: '2.2 × 2 in — 55.9 × 50.8 mm' },
+                        { value: '50.8x50.8', label: '2 × 2 in — 50.8 × 50.8 mm' },
+                      ]}
+                    />
+                  </Field>
+                  <Field
+                    label="How the picture sits in its frame"
+                    hint="“Fill” keeps the frame edge-to-edge with no mat; “whole picture” never crops."
+                  >
+                    <Select
+                      value={draft.layout.pictureFit === 'contain' ? 'contain' : 'cover'}
+                      onChange={(e) => patchLayout('pictureFit', e.target.value)}
+                      options={[
+                        { value: 'cover', label: 'Fill the frame — no black, no white bands' },
+                        { value: 'contain', label: 'Whole picture — nothing cropped' },
+                      ]}
+                    />
+                  </Field>
+                </div>
               </Card>
 
               <Card title="Typography & colour">

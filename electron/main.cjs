@@ -340,6 +340,39 @@ async function writeMediaFile({ patientId, procedureId, kind, buffer, mime }) {
 
 const printWindows = new Set()
 
+/**
+ * Resolve once every <img> in the print document is decoded (or the timeout
+ * expires). Without this the picture plate can print empty: `did-finish-load`
+ * fires when the HTML is parsed, not when the base64 frames are ready.
+ */
+async function waitForImages(win, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs
+  let last = { total: 0, pending: 0 }
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop
+    last = await win.webContents
+      .executeJavaScript(
+        `(() => {
+           const imgs = Array.from(document.images || []);
+           return {
+             total: imgs.length,
+             pending: imgs.filter((i) => !i.complete || i.naturalWidth === 0).length,
+             fonts: document.fonts ? document.fonts.status : 'loaded',
+           };
+         })()`,
+        true,
+      )
+      .catch(() => ({ total: 0, pending: 0, fonts: 'loaded' }))
+    if (last.pending === 0 && last.fonts !== 'loading') return last
+    if (Date.now() >= deadline) {
+      console.warn(`[print] proceeding with ${last.pending}/${last.total} image(s) still decoding`)
+      return last
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => setTimeout(r, 120))
+  }
+}
+
 async function withPrintWindow(html, title, work) {
   const tmpDir = path.join(app.getPath('temp'), 'endoreport-print')
   fs.mkdirSync(tmpDir, { recursive: true })
@@ -356,8 +389,11 @@ async function withPrintWindow(html, title, work) {
   printWindows.add(win)
   try {
     await win.loadURL(pathToFileURL(file).href)
-    // Give the renderer a moment to lay out embedded images before printing.
-    await new Promise((r) => setTimeout(r, 350))
+    // Printing must wait until every embedded picture has actually decoded.
+    // A fixed delay is not enough: a seven-picture plate carries tens of
+    // megabytes of base64 PNG, and printing early produced a blank picture
+    // area even though the preview looked correct.
+    await waitForImages(win)
     return await work(win)
   } finally {
     printWindows.delete(win)
@@ -389,9 +425,18 @@ async function savePdf(html, title) {
     filters: [{ name: 'PDF document', extensions: ['pdf'] }],
   })
   if (canceled || !filePath) return { ok: false, cancelled: true }
-  const data = await withPrintWindow(html, title, (win) =>
-    win.webContents.printToPDF({ printBackground: true, marginsType: 0, pageSize: 'A4' }),
-  )
+  // Chromium occasionally rejects the first job on a freshly created window
+  // ("Printing failed"); one retry after a short settle is enough in practice.
+  const data = await withPrintWindow(html, title, async (win) => {
+    const options = { printBackground: true, marginsType: 0, pageSize: 'A4' }
+    try {
+      return await win.webContents.printToPDF(options)
+    } catch (err) {
+      console.warn('[print] first PDF attempt failed, retrying:', err.message)
+      await new Promise((r) => setTimeout(r, 450))
+      return win.webContents.printToPDF(options)
+    }
+  })
   await fsp.writeFile(filePath, data)
   return { ok: true, filePath }
 }

@@ -440,7 +440,14 @@ check('picture plate holds seven slots', hModel.imagePlan.capacity === 7)
 
 const hHtml = buildPrintHtml(hModel)
 check('report page is bordered', hHtml.includes('border: 1.2px solid #000') && hHtml.includes('class="frame"'))
-check('pictures are 2.2in x 2in', hHtml.includes('grid-template-columns: repeat(3, 55.88mm)') && hHtml.includes('height: 50.8mm'))
+check(
+  'pictures default to 2.5in x 2in on white with a single rule',
+  hHtml.includes('--pic-w: 63.5mm') &&
+    hHtml.includes('--pic-h: 50.8mm') &&
+    hHtml.includes('repeat(3, var(--pic-w))') &&
+    hHtml.includes('background: #fff; border: .8px solid #000'),
+)
+check('pictures are never matted in black', !hHtml.includes('background: #000'))
 check('the right-hand picture column reaches the bottom', hHtml.includes('class="side4"') && hHtml.includes('justify-content: space-between'))
 const sealedModel = buildReportModel(hospitalPatient, hospitalProcedure, hospitalTemplate, {
   sealDataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',

@@ -4,6 +4,36 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.9 — 2026-10-26
+
+### Live capture
+
+- The live picture now follows the capture card's own aspect ratio and sits centred in the
+  stage, so the whole endoscopic frame is visible instead of being squeezed into a fixed
+  4:3 box with dark bands above and below.
+- New **Trim black border** option (on by default). Many capture cards pad the frame with a
+  uniform black surround; the still is now cropped to the picture itself, so nothing black
+  ends up in the report. It only removes near-uniform black lines, never more than a quarter
+  of the frame from any edge, so a genuinely dark lumen is left alone.
+
+### Printed pictures
+
+- Pictures are printed on white with a single thin rule — the black mat is gone.
+- The frame size is now a template setting (default **2.5 × 2 in / 63.5 × 50.8 mm**) with a
+  choice of **Fill the frame** (default, no bands) or **Whole picture** (never crops).
+
+### Printing with pictures — fixed
+
+- Printing a report with pictures could produce a page with the text but an empty plate.
+  The print window now waits until every picture has actually decoded instead of relying on
+  a fixed 350 ms delay.
+- Large cases failed outright: seven full-resolution PNG frames (2 in each) make a ~55 MB
+  document, which Chromium refuses to print at all. Print copies are now downscaled to 1400 px
+  and re-encoded as JPEG (~7 MB for the same seven pictures). The stored originals are
+  untouched; only the print copy is resized.
+- If a picture file cannot be read, the operator is now told which frames will print blank
+  instead of the failure being silent.
+
 ## 0.5.8 — 2026-10-26
 
 ### Dashboard

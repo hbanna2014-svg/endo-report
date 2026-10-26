@@ -36,6 +36,7 @@ import { analyse, emptyProcedure, findingsForSection, findFindingDef } from '../
 import { sectionsForProcedure, PROCEDURE_TYPES } from '../lib/anatomy.js'
 import { buildReportModel, renderPlainText, imageLayoutDef } from '../lib/reportModel.js'
 import { buildPrintHtml, buildImagePlusHtml } from '../lib/printHtml.js'
+import { hydratePrintImages } from '../lib/printImages.js'
 import useCapture, { fmtDuration } from '../lib/useCapture.js'
 
 import FindingsPanel from './FindingsPanel.jsx'
@@ -523,24 +524,22 @@ export default function Workspace({
   /* ----------------------------------------------------- print / export / copy --- */
 
   const withImages = useCallback(async () => {
-    const imgs = await Promise.all(
-      media
-        .filter((m) => m.kind === 'image')
-        .map(async (m) => {
-          try {
-            const { dataUrl } = await api.app.readFileAsDataUrl(m.filePath)
-            return { ...m, dataUrl }
-          } catch {
-            return m
-          }
-        }),
-    )
-    const videos = media.filter((m) => m.kind === 'video')
+    // Print copies are downscaled; a seven-picture plate of full-resolution
+    // PNG is heavy enough that Chromium refuses to print it at all.
+    const { media: prepared, failed } = await hydratePrintImages(media, api.app.readFileAsDataUrl)
+    if (failed.length) {
+      toast.push({
+        tone: 'warn',
+        title: `${failed.length} picture(s) could not be attached`,
+        body: 'They will print as blank frames. Re-import the file from the Media library.',
+      })
+    }
+    const byId = new Map(prepared.map((m) => [m.id, m]))
     return [
-      ...model.media.map((m) => (m.kind === 'image' ? imgs.find((i) => i.id === m.id) || m : m)),
-      ...videos.filter((v) => !model.media.some((m) => m.id === v.id)),
+      ...model.media.map((m) => byId.get(m.id) || m),
+      ...prepared.filter((m) => m.kind === 'video' && !model.media.some((x) => x.id === m.id)),
     ]
-  }, [media, model])
+  }, [media, model, toast])
 
   const doPrint = useCallback(async () => {
     if (!model) return
