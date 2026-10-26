@@ -364,8 +364,8 @@ export function buildHospitalPrintHtml(model) {
   const font = layout.fontFamily || 'Arial'
   // Picture frame size in millimetres (default 2.5in × 2in — landscape, which
   // suits both the endoscopic frame and the three-across plate).
-  const picW = Number(layout.pictureW) > 10 ? Number(layout.pictureW) : 63.5
-  const picH = Number(layout.pictureH) > 10 ? Number(layout.pictureH) : 50.8
+  const picW = Number(layout.pictureW) > 10 ? Number(layout.pictureW) : 56
+  const picH = Number(layout.pictureH) > 10 ? Number(layout.pictureH) : 42
   const picFit = layout.pictureFit === 'contain' ? 'contain' : 'cover'
 
   const figure = (m, cls = '') => `<figure class="${cls}">
@@ -496,8 +496,8 @@ export function buildHospitalPrintHtml(model) {
   }
   .col-left { min-width: 0; padding-bottom: 24mm; }
   .side4 { display: flex; flex-direction: column; justify-content: space-between; height: 100%; gap: 1.8mm; }
-  .side4 figure { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
-  .side4 figure img { width: var(--pic-w); flex: 1 1 auto; min-height: 0; height: auto; object-fit: var(--pic-fit); object-position: center; background: #fff; border: .8px solid #000; }
+  .side4 figure { flex: 0 0 auto; display: flex; flex-direction: column; }
+  .side4 figure img { width: var(--pic-w); height: var(--pic-h); object-fit: var(--pic-fit); object-position: center; background: #fff; border: .8px solid #000; }
   .side4 .noimg { flex: 1 1 auto; height: auto; min-height: 0; }
   .side4 figcaption { flex: 0 0 auto; }
 

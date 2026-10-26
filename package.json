@@ -21,7 +21,9 @@
     "release:win": "npm run build && electron-builder --win --x64 --publish always",
     "checksums": "node scripts/checksums.mjs release",
     "preview:hospital": "node scripts/hospital-preview.mjs",
-    "test:legacy": "node scripts/legacy-db-test.mjs"
+    "test:legacy": "node scripts/legacy-db-test.mjs",
+    "test:print": "xvfb-run -a npx electron scripts/verify-print.cjs --no-sandbox --disable-gpu",
+    "test:word": "node scripts/verify-word-template.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.17",

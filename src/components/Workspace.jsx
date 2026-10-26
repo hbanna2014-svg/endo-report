@@ -29,6 +29,9 @@ import {
   ClipboardList,
   Stethoscope,
   MonitorPlay,
+  Upload,
+  Trash2,
+  FileCheck2,
 } from 'lucide-react'
 
 import { api, mediaSrc, newUid } from '../lib/api.js'
@@ -251,6 +254,65 @@ export default function Workspace({
     () => (template ? { ...template, clinic: { ...(template.clinic || {}), ...(clinic || {}) } } : null),
     [template, clinic],
   )
+
+  /* --------------------------------------------------- Word report template --- */
+
+  /** The .docx the clinic's report is printed into, kept on the report template. */
+  const wordTemplate = template?.layout?.wordTemplate || null
+
+  const uploadWordTemplate = useCallback(async () => {
+    if (!template) return
+    setBusy(true)
+    try {
+      const res = await api.templates.importDocx()
+      if (!res?.ok) {
+        if (res && !res.cancelled) {
+          toast.push({ tone: 'err', title: 'Could not read that Word file', body: res.error || '' })
+        }
+        return
+      }
+      const next = {
+        ...template,
+        layout: {
+          ...template.layout,
+          wordTemplate: {
+            fileName: res.fileName,
+            bytes: res.bytes,
+            base64: res.base64,
+            blocks: res.blocks || [],
+            tokens: res.tokens || [],
+            unknownTokens: res.unknownTokens || [],
+            importedAt: new Date().toISOString(),
+          },
+        },
+      }
+      await api.templates.save(next)
+      await onSaved?.()
+      toast.push({
+        tone: 'ok',
+        title: 'Word template attached',
+        body: `${res.fileName} — the Word button now fills this file.`,
+      })
+    } catch (err) {
+      toast.push({ tone: 'err', title: 'Could not attach that Word file', body: err?.message || String(err) })
+    } finally {
+      setBusy(false)
+    }
+  }, [onSaved, template, toast])
+
+  const removeWordTemplate = useCallback(async () => {
+    if (!template) return
+    setBusy(true)
+    try {
+      const layout = { ...template.layout }
+      delete layout.wordTemplate
+      await api.templates.save({ ...template, layout })
+      await onSaved?.()
+      toast.push({ tone: 'ok', title: 'Word template removed', body: 'Reports use the built-in layout again.' })
+    } finally {
+      setBusy(false)
+    }
+  }, [onSaved, template, toast])
 
   const analysis = useMemo(
     () => (procedure ? analyse(procedure, { mediaCount: media.length }) : null),
@@ -1017,6 +1079,22 @@ export default function Workspace({
                     onAutoFill={autoFillPlate}
                     onClearAll={clearPlate}
                   />
+                </div>
+
+                <div className="report-sign-row wt-row">
+                  <FileCheck2 size={13} className="wt-icon" />
+                  <span className="tiny muted">Word template</span>
+                  <span className="tiny wt-name" title={wordTemplate?.fileName || ''}>
+                    {wordTemplate ? wordTemplate.fileName : 'none — built-in layout'}
+                  </span>
+                  <Button size="sm" variant="ghost" icon={Upload} onClick={uploadWordTemplate} disabled={busy}>
+                    {wordTemplate ? 'Replace' : 'Upload .docx'}
+                  </Button>
+                  {wordTemplate ? (
+                    <Button size="sm" variant="ghost" icon={Trash2} onClick={removeWordTemplate} disabled={busy}>
+                      Remove
+                    </Button>
+                  ) : null}
                 </div>
 
                 <div className="report-sign-row">

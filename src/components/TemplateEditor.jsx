@@ -323,12 +323,13 @@ export default function TemplateEditor({ templates, onChanged }) {
                     hint="Each frame prints the whole picture on white with a single thin rule — no black mat."
                   >
                     <Select
-                      value={`${Number(draft.layout.pictureW) || 63.5}x${Number(draft.layout.pictureH) || 50.8}`}
+                      value={`${Number(draft.layout.pictureW) || 56}x${Number(draft.layout.pictureH) || 42}`}
                       onChange={(e) => {
                         const [w, h] = e.target.value.split('x').map(Number)
                         setDraft((d) => ({ ...d, layout: { ...d.layout, pictureW: w, pictureH: h } }))
                       }}
                       options={[
+                        { value: '56x42', label: '56 × 42 mm — four fit down the side (default)' },
                         { value: '63.5x50.8', label: '2.5 × 2 in — 63.5 × 50.8 mm' },
                         { value: '50.8x63.5', label: '2 × 2.5 in — 50.8 × 63.5 mm' },
                         { value: '55.88x50.8', label: '2.2 × 2 in — 55.9 × 50.8 mm' },

@@ -441,9 +441,9 @@ check('picture plate holds seven slots', hModel.imagePlan.capacity === 7)
 const hHtml = buildPrintHtml(hModel)
 check('report page is bordered', hHtml.includes('border: 1.2px solid #000') && hHtml.includes('class="frame"'))
 check(
-  'pictures default to 2.5in x 2in on white with a single rule',
-  hHtml.includes('--pic-w: 63.5mm') &&
-    hHtml.includes('--pic-h: 50.8mm') &&
+  'pictures default to 56 x 42 mm on white with a single rule',
+  hHtml.includes('--pic-w: 56mm') &&
+    hHtml.includes('--pic-h: 42mm') &&
     hHtml.includes('repeat(3, var(--pic-w))') &&
     hHtml.includes('background: #fff; border: .8px solid #000'),
 )

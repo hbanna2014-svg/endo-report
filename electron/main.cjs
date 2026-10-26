@@ -1014,9 +1014,21 @@ function registerIpc() {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       title: 'Open the Word report you want to edit',
       properties: ['openFile'],
-      filters: [{ name: 'Word document', extensions: ['docx'] }],
+      // 'doc' and the all-files entry are here on purpose: a dialog that only
+      // lists *.docx left some clinics staring at an empty folder when their
+      // file was saved by an older version of Word.
+      filters: [
+        { name: 'Word documents', extensions: ['docx', 'doc'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
     })
     if (canceled || !filePaths[0]) return { ok: false, cancelled: true }
+    if (path.extname(filePaths[0]).toLowerCase() === '.doc') {
+      return {
+        ok: false,
+        error: 'That is an older .doc file. Open it in Word, choose Save As → Word Document (.docx), then pick it again.',
+      }
+    }
     const buffer = fs.readFileSync(filePaths[0])
     const { html, margins } = await convertDocxBuffer(buffer)
     return {
@@ -1034,9 +1046,18 @@ function registerIpc() {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       title: 'Choose the Word file to use as the report template',
       properties: ['openFile'],
-      filters: [{ name: 'Word document', extensions: ['docx'] }],
+      filters: [
+        { name: 'Word documents', extensions: ['docx', 'doc'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
     })
     if (canceled || !filePaths?.length) return { ok: false, cancelled: true }
+    if (path.extname(filePaths[0]).toLowerCase() === '.doc') {
+      return {
+        ok: false,
+        error: 'That is an older .doc file. Open it in Word, choose Save As → Word Document (.docx), then pick it again.',
+      }
+    }
     const parsed = await docxTemplate.parseDocxFile(filePaths[0])
     return { ok: true, ...parsed }
   })

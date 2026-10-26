@@ -16,6 +16,23 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
   ends up in the report. It only removes near-uniform black lines, never more than a quarter
   of the frame from any edge, so a genuinely dark lumen is left alone.
 
+### Word report
+
+- The **REPORT** panel now has a **Word template** row. Upload the clinic's own `.docx` and
+  the **Word** button fills that file instead of the built-in layout — the letterhead,
+  fonts, margins and logos of the uploaded document are kept, and only the `{{TOKENS}}`
+  inside it are replaced. The attachment is stored on the report template, so it applies to
+  every new report until it is replaced or removed.
+- The file picker now lists `.doc` files as well and offers **All files**, so a folder that
+  previously looked empty now shows its Word documents. Choosing an old binary `.doc`
+  explains how to save it as `.docx` instead of failing silently.
+
+### Printed pictures
+
+- All seven frames now print at **one size** (56 × 42 mm, 4:3). The four down the right
+  column used to be squeezed to fit and came out smaller than the three across the top; at
+  the previous size the seventh frame was also clipped off the bottom of the page.
+
 ### Live console
 
 - The **Captured** strip is one column of large square frames. Frames keep a fixed size

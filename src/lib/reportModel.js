@@ -37,9 +37,10 @@ export const DEFAULT_TEMPLATE = {
     /** 'flow' = as many images as captured · 'grid4' = fixed 2x2 · 'grid6' = fixed 2x3 */
     imageLayout: 'grid4',
     imageColumns: 3,
-    /** printed picture frame, in millimetres (63.5 × 50.8 = 2.5in × 2in) */
-    pictureW: 63.5,
-    pictureH: 50.8,
+    /** printed picture frame, in millimetres — 56 × 42 (4:3) leaves room for
+     *  four frames down the right column at the same size as the top three */
+    pictureW: 56,
+    pictureH: 42,
     /** 'cover' fills the frame (may crop a sliver) · 'contain' shows every pixel */
     pictureFit: 'cover',
     showImageCaptions: true,

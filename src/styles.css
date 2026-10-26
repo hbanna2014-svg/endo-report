@@ -917,8 +917,8 @@ a { color: var(--brand); }
   justify-content: space-between;
   margin-top: 7.6px;
 }
-.hf-top .hf-imgwrap { width: 211.2px; height: 192px; }
-.hf-top img { display: block; width: 211.2px; height: 192px; object-fit: contain; background: #000; }
+.hf-top .hf-imgwrap { width: 211.2px; height: 158.4px; }
+.hf-top img { display: block; width: 211.2px; height: 158.4px; object-fit: cover; object-position: center; background: #fff; border: .8px solid #000; }
 .hf-fig figcaption {
   text-align: center; font-size: 8.4px; margin-top: 2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -940,10 +940,10 @@ a { color: var(--brand); }
 }
 .hf-left { min-width: 0; padding-bottom: 92px; }
 .hf-side4 { display: flex; flex-direction: column; justify-content: space-between; height: 100%; gap: 6.8px; }
-.hf-side { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
-.hf-side .hf-imgwrap { flex: 1 1 auto; min-height: 0; width: 211.2px; }
-.hf-side img { width: 211.2px; height: 100%; object-fit: contain; background: #000; }
-.hf-side .hf-noimg { width: 211.2px; flex: 1 1 auto; min-height: 0; }
+.hf-side { flex: 0 0 auto; display: flex; flex-direction: column; }
+.hf-side .hf-imgwrap { flex: 0 0 auto; width: 211.2px; height: 158.4px; }
+.hf-side img { width: 211.2px; height: 158.4px; object-fit: cover; object-position: center; background: #fff; border: .8px solid #000; }
+.hf-side .hf-noimg { width: 211.2px; height: 158.4px; flex: 0 0 auto; }
 .hf-side figcaption { flex: 0 0 auto; }
 .hf-loading { display: grid; place-items: center; color: #94a3b8; font-size: 9px; }
 
@@ -1028,6 +1028,13 @@ a { color: var(--brand); }
   background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px;
 }
 .report-sign-row .select { height: 30px; font-size: 12px; }
+.wt-row { gap: 7px; }
+.wt-row .wt-icon { color: var(--brand); flex: 0 0 auto; }
+.wt-row .wt-name {
+  max-width: 168px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ink-2); font-weight: 600;
+}
+.wt-row .btn { margin-left: 0; }
 
 /* --- sex picker ----------------------------------------------------------- */
 .sex-pick { display: flex; gap: 6px; }
