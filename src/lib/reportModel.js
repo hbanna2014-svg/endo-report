@@ -280,6 +280,9 @@ export function buildHospitalForm(model) {
     medication: String(procedure.medication || procedure.sedation || '').trim() || 'N/A',
     findings,
     comments: commentLines,
+    /* The rich text typed (or opened from Word) in the empty space of the form */
+    notesHtml: model.reportDoc?.custom ? model.reportDoc.html : '',
+    notesOverflow: !!procedure.docOverflow,
     top,
     side,
     extraImages: plan.slots.filter((s) => s.no > 7 && s.media).map((s) => ({ ...s.media, no: s.no })),

@@ -26,7 +26,10 @@ import {
   Redo2,
   Eraser,
   RotateCcw,
+  ImagePlus,
 } from 'lucide-react'
+
+import { downscaleForPrint } from '../lib/printImages.js'
 
 const FONTS = [
   ['', 'Font'],
@@ -49,6 +52,11 @@ const SIZES = [
   ['5', '18'],
   ['6', '24'],
   ['7', '36'],
+]
+
+const SYMBOLS = [
+  '°', '±', '≥', '≤', 'µ', '≈', '≠', '→', '←', '↑', '↓',
+  '×', '÷', '½', '¼', '¾', '•', '§', '¶', 'Δ', 'α', 'β', 'Ω', '∞',
 ]
 
 const BUTTONS = [
@@ -77,6 +85,8 @@ const BUTTONS = [
 export default function RichFindings({ html, onSave, onReset, custom = false, placeholder, minHeight = 160, docMode = false }) {
   const ref = useRef(null)
   const focused = useRef(false)
+  const fileRef = useRef(null)
+  const saveTimer = useRef(null)
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
@@ -112,10 +122,45 @@ export default function RichFindings({ html, onSave, onReset, custom = false, pl
   const save = () => {
     if (!ref.current) return
     focused.current = false
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current)
+      saveTimer.current = null
+    }
     if (dirty) {
       onSave?.(ref.current.innerHTML)
       setDirty(false)
     }
+  }
+
+  /* Keep the report in step while typing: clicking Print without leaving the
+     editor must still print the new text. */
+  const queueSave = () => {
+    setDirty(true)
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      if (ref.current) onSave?.(ref.current.innerHTML)
+      setDirty(false)
+    }, 600)
+  }
+
+  const insertSymbol = (sym) => {
+    if (!sym || !focusEditor()) return
+    document.execCommand('insertText', false, sym)
+    queueSave()
+  }
+
+  const insertPicture = async (file) => {
+    if (!file) return
+    const dataUrl = await new Promise((resolve) => {
+      const fr = new FileReader()
+      fr.onload = () => resolve(String(fr.result || ''))
+      fr.readAsDataURL(file)
+    })
+    // Keep the page light: a 900 px JPEG prints at 300 dpi in this space.
+    const small = await downscaleForPrint(dataUrl, 900)
+    if (!focusEditor()) return
+    document.execCommand('insertImage', false, small)
+    queueSave()
   }
 
   return (
@@ -165,6 +210,38 @@ export default function RichFindings({ html, onSave, onReset, custom = false, pl
         ))}
 
         <span className="fmt-sep" />
+        <select
+          className="fmt-select fmt-sym"
+          value=""
+          title="Insert a symbol"
+          onChange={(e) => {
+            insertSymbol(e.target.value)
+            e.target.value = ''
+          }}
+        >
+          <option value="">Ω</option>
+          {SYMBOLS.map((sym) => (
+            <option key={sym} value={sym}>
+              {sym}
+            </option>
+          ))}
+        </select>
+        <button type="button" title="Insert a picture" onClick={() => fileRef.current?.click()}>
+          <ImagePlus size={13} />
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            insertPicture(file)
+            e.target.value = ''
+          }}
+        />
+
+        <span className="fmt-sep" />
         <label className="fmt-color" title="Text colour">
           <input type="color" defaultValue="#111827" onChange={(e) => exec('foreColor', e.target.value)} />
         </label>
@@ -199,7 +276,7 @@ export default function RichFindings({ html, onSave, onReset, custom = false, pl
         onFocus={() => {
           focused.current = true
         }}
-        onInput={() => setDirty(true)}
+        onInput={queueSave}
         onBlur={save}
         onKeyDown={(e) => {
           if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {

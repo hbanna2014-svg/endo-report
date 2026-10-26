@@ -16,6 +16,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react'
 import { ImagePlus, Replace, Trash2, ArrowLeft, ArrowRight } from 'lucide-react'
 
 import { useThumbs } from './ReportPlate.jsx'
+import RichFindings from './RichFindings.jsx'
 
 const MM = 96 / 25.4
 const SHEET_W = 210 * MM
@@ -129,6 +130,10 @@ export default function HospitalForm({
   const thumbs = useThumbs(pictures, 520)
 
   const viewport = useRef(null)
+  const notesRef = useRef(null)
+  const onFieldRef = useRef(onField)
+  onFieldRef.current = onField
+  const lastOverflow = useRef(null)
   const [scale, setScale] = useState(1)
 
   useLayoutEffect(() => {
@@ -142,6 +147,20 @@ export default function HospitalForm({
   }, [])
 
   if (!f) return null
+
+  /* The notes area has a fixed place on the form. If the text no longer fits,
+     the printed version moves the whole block to a second page rather than
+     cutting a sentence in half. */
+  useLayoutEffect(() => {
+    const el = notesRef.current
+    if (!el) return undefined
+    const over = el.scrollHeight > el.clientHeight + 2
+    if (lastOverflow.current !== over) {
+      lastOverflow.current = over
+      if (editable) onFieldRef.current?.('procedure', 'docOverflow', over)
+    }
+    return undefined
+  }, [editable, model.reportDoc?.html])
 
   const capacity = 7
   const field = (kind, key) => (v) => onField?.(kind, key, v)
@@ -269,6 +288,21 @@ export default function HospitalForm({
                     </div>
                   ))
                 )}
+              </div>
+
+              <div className="hf-notes" ref={notesRef}>
+                {editable ? (
+                  <RichFindings
+                    html={model.reportDoc?.html || ''}
+                    onSave={(html) => onFieldRef.current?.('procedure', 'docHtml', html)}
+                    onReset={() => onFieldRef.current?.('procedure', 'docHtml', '')}
+                    placeholder="Open a Word file, or click here and type — the text prints in this space."
+                    minHeight={0}
+                    docMode
+                  />
+                ) : model.reportDoc?.custom ? (
+                  <div className="rich-static" dangerouslySetInnerHTML={{ __html: model.reportDoc.html }} />
+                ) : null}
               </div>
             </div>
 

@@ -23,10 +23,12 @@ function nl2p(text) {
 }
 
 export function buildPrintHtml(model) {
-  // A report that came from the clinic's own Word file prints as that file.
-  if (model?.reportDoc?.custom) return buildDocPrintHtml(model)
-  // The unit's own paper form (letterhead, patient grid, 3 + 4 pictures).
+  // The unit's own paper form always wins: text opened from a Word file belongs
+  // in the blank half of that form, not on a page of its own.
   if ((model?.template?.layout?.style || 'standard') === 'hospital') return buildHospitalPrintHtml(model)
+  // Anywhere else, a report that came from the clinic's own Word file prints as
+  // that file.
+  if (model?.reportDoc?.custom) return buildDocPrintHtml(model)
 
   const t = model.template
   const c = t.clinic
@@ -392,6 +394,16 @@ export function buildHospitalPrintHtml(model) {
     ? `<div class="comments"><span class="lbl">COMMENTS :</span> ${f.comments.map(esc).join('<br>')}</div>`
     : ''
 
+  /* Free text typed in the blank half of the form, or opened from a Word file.
+     When it cannot fit, the whole block moves to a second page instead of being
+     guillotined at the frame edge. */
+  const notes = f.notesHtml
+    ? `<div class="notes">${f.notesOverflow ? '' : f.notesHtml}</div>`
+    : ''
+  const notesContinued = f.notesOverflow
+    ? `<div class="notes-cont">continued on the next page &rarr;</div>`
+    : ''
+
   const header = `
     <div class="lh">
       ${f.header.logo ? `<img class="logo" src="${f.header.logo}" alt="">` : ''}
@@ -489,6 +501,23 @@ export function buildHospitalPrintHtml(model) {
     background: #eef3f7; color: #6b7280; font-size: 6.8pt; border: 1px solid #cbd5e1;
   }
 
+  /* free text in the blank half of the form ----------------------------- */
+  .notes {
+    flex: 1 1 auto; min-height: 0; overflow: hidden;
+    font-size: 10.2pt; line-height: 1.34; margin-top: 3mm;
+  }
+  .notes-cont { font-size: 7.6pt; font-style: italic; color: #444; margin-top: 1mm; }
+  .notes p { margin: 0 0 1.6mm; }
+  .notes h1, .notes h2, .notes h3 { font-size: 11pt; margin: 2mm 0 1mm; }
+  .notes img, .notes-full img { max-width: 100%; height: auto; }
+  .notes ul, .notes ol, .notes-full ul, .notes-full ol { margin: 0 0 1.6mm 4mm; padding: 0; }
+  .notes-page .frame.flow { height: auto; min-height: 279mm; }
+  .np-head { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1.2px solid #000; padding-bottom: 2mm; margin-bottom: 3mm; }
+  .np-patient { font-size: 8.6pt; color: #222; }
+  .np-title { font-weight: 700; font-size: 12pt; }
+  .notes-full { font-size: 10.6pt; line-height: 1.42; }
+  .notes-full p { margin: 0 0 2mm; }
+
   /* two columns; the picture column runs to the bottom border ------------ */
   .cols {
     flex: 1 1 auto; display: grid; grid-template-columns: 1fr var(--pic-w);
@@ -533,6 +562,8 @@ export function buildHospitalPrintHtml(model) {
           <div class="fh">FINDINGS :</div>
           ${findings}
           ${comments}
+          ${notes}
+          ${notesContinued}
         </div>
         <div class="side4">${sideFigures.map((m) => figure(m, 'side')).join('')}</div>
       </div>
@@ -546,6 +577,19 @@ export function buildHospitalPrintHtml(model) {
       </div>
     </div>
   </div>
+  ${
+    f.notesOverflow
+      ? `<div class="sheet notes-page">
+           <div class="frame flow">
+             <div class="np-head">
+               <div class="np-patient">${esc(model.patientLine?.name || '')} &nbsp;·&nbsp; ${esc(model.reportNo || '')}</div>
+               <div class="np-title">Additional notes</div>
+             </div>
+             <div class="notes-full">${f.notesHtml}</div>
+           </div>
+         </div>`
+      : ''
+  }
 </body>
 </html>`
 }

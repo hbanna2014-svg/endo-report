@@ -939,6 +939,16 @@ a { color: var(--brand); }
   min-height: 0;
 }
 .hf-left { min-width: 0; padding-bottom: 92px; }
+.hf-notes { flex: 1 1 auto; min-height: 0; overflow: hidden; margin-top: 8px; }
+.hf-notes .rich-findings { height: 100%; display: flex; flex-direction: column; }
+.hf-notes .format-bar { flex: 0 0 auto; margin-bottom: 4px; }
+/* the sheet is drawn at 0.65-0.8 scale, so the controls need a little more size */
+.hf-notes .format-bar button { width: 29px; height: 26px; }
+.hf-notes .fmt-select { height: 26px; font-size: 11px; }
+.hf-notes .fmt-font { width: 112px; }
+.hf-notes .fmt-size { width: 62px; }
+.hf-notes .rich-edit { flex: 1 1 auto; min-height: 0; overflow: auto; font-size: 11.2px; line-height: 1.36; }
+.hf-notes .rich-edit img { max-width: 100%; height: auto; }
 .hf-side4 { display: flex; flex-direction: column; justify-content: space-between; height: 100%; gap: 6.8px; }
 .hf-side { flex: 0 0 auto; display: flex; flex-direction: column; }
 .hf-side .hf-imgwrap { flex: 0 0 auto; width: 211.2px; height: 158.4px; }

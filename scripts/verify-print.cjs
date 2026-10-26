@@ -138,6 +138,17 @@ async function run() {
       { sectionId: 'd2', findingId: 'normal_d2', values: {}, notes: '' },
     ],
   }
+  // Optional free text in the blank half of the form.
+  if (process.env.VERIFY_NOTES) {
+    const long = process.env.VERIFY_NOTES === 'long'
+    procedure.docHtml = long
+      ? Array.from({ length: 26 })
+          .map((_, i) => `<p>Line ${i + 1}: the patient was reviewed after the procedure and advised on diet, medication and follow-up.</p>`)
+          .join('')
+      : '<p><b>ADDENDUM:</b> Patient tolerated the procedure well. Review in two weeks.</p>'
+    procedure.docOverflow = long
+  }
+
   const saved = await db.saveProcedure(patient.id, procedure)
 
   // Three heavy frames, exactly like a capture card produces.

@@ -16,6 +16,20 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
   ends up in the report. It only removes near-uniform black lines, never more than a quarter
   of the frame from any edge, so a genuinely dark lumen is left alone.
 
+### Writing on the form
+
+- The blank half of the hospital form is now a live editor. Open a Word file, or click and
+  type: the text sits exactly where it will print.
+- Full formatting is available there — bold, italic, underline, strike-through, bulleted and
+  numbered lists, four alignments, font family, font size, text colour, indent, undo/redo
+  and clear formatting — plus an **insert symbol** list (° ± ≥ ≤ µ → × ÷ ½ Δ Ω …) and
+  **insert picture**, so a small diagram or a marked-up frame can go on the page.
+- Text is saved as you type, so pressing Print without leaving the box still prints the new
+  words.
+- If the text no longer fits the blank area, the printed report keeps the pictures on page
+  one with a "continued on the next page" line, and the whole note prints on page two —
+  nothing is cut off mid-sentence.
+
 ### Word report
 
 - The **REPORT** panel now has a **Word template** row. Upload the clinic's own `.docx` and
