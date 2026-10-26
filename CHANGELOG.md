@@ -16,6 +16,15 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
   ends up in the report. It only removes near-uniform black lines, never more than a quarter
   of the frame from any edge, so a genuinely dark lumen is left alone.
 
+### Live console
+
+- The **Captured** strip is now a two-column grid of square frames instead of a single
+  column of squashed 4:3 thumbnails. Frames keep a fixed, readable size no matter how many
+  are captured, and the strip scrolls once they no longer fit — 28 frames stay usable
+  instead of shrinking to a row of slivers.
+- The rail is wider (178 px) to fit two frames; the three capture pickers now wrap onto a
+  second row so their labels are no longer truncated to "No capture de".
+
 ### Printed pictures
 
 - Pictures are printed on white with a single thin rule — the black mat is gone.

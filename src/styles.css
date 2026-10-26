@@ -445,7 +445,7 @@ a { color: var(--brand); }
 
 .console-grid {
   display: grid; gap: 12px; min-height: 0; flex: 1;
-  grid-template-columns: 104px minmax(0, 1fr) minmax(430px, 600px);
+  grid-template-columns: 178px minmax(0, 1fr) minmax(430px, 600px);
   align-items: stretch;
 }
 .console-grid.view-findings,
@@ -490,9 +490,11 @@ a { color: var(--brand); }
   border: 1px solid #1e293b; border-radius: var(--radius); padding: 10px;
 }
 .stage-head {
-  display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr) auto;
-  gap: 8px; align-items: end; margin-bottom: 8px;
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-bottom: 8px;
 }
+/* The live console's centre column is narrow; let the three pickers wrap
+   instead of truncating their labels to "No capture de". */
+.stage-head > .field { flex: 1 1 132px; min-width: 0; }
 .stage-head label, .stage-head .field > label { color: #94a3b8; }
 .stage-head .select { background: #16233d; border-color: #26364f; color: #e2e8f0; }
 .stage-wrap .row label { color: #cbd5e1; }
@@ -528,17 +530,25 @@ a { color: var(--brand); }
   font-size: 10.5px; font-weight: 700; color: var(--brand-dark); background: var(--brand-soft);
   border-radius: 999px; padding: 1px 6px;
 }
-.rail-list { flex: 1; overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 6px; }
+/* Two square frames per row. flex-wrap rather than grid: a grid row cannot
+   take its height from a square item when the item also has overflow:hidden,
+   which made the rows overlap by a third of a frame. */
+.rail-list {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  padding: 7px; display: flex; flex-wrap: wrap; gap: 7px;
+  align-content: flex-start; scrollbar-gutter: stable;
+}
+.rail-list > .rail-item { flex: 0 0 calc(50% - 3.5px); }
 .rail-item {
   position: relative; border-radius: 7px; overflow: hidden; background: #05080f;
-  border: 1px solid #1e293b; cursor: zoom-in; aspect-ratio: 4 / 3;
+  border: 1px solid #1e293b; cursor: zoom-in; aspect-ratio: 1 / 1;
 }
 .rail-item:hover { border-color: var(--brand); }
 .rail-item.on { box-shadow: 0 0 0 2px var(--ok); }
 .rail-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .rail-no {
-  position: absolute; left: 3px; bottom: 3px; z-index: 1; font-size: 9px; font-weight: 700;
-  color: #fff; background: rgba(2, 6, 23, .7); border-radius: 4px; padding: 0 4px;
+  position: absolute; left: 3px; bottom: 3px; z-index: 1; font-size: 9.5px; font-weight: 700;
+  color: #fff; background: rgba(2, 6, 23, .72); border-radius: 4px; padding: 0 4px;
 }
 .rail-add {
   position: absolute; right: 3px; top: 3px; z-index: 2; width: 19px; height: 19px; display: grid;
