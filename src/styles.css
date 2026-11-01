@@ -965,10 +965,18 @@ a { color: var(--brand); }
   display: grid;
   grid-template-columns: 1fr 211.2px;
   gap: 17px;
-  margin-top: 8.3px;
+  margin-top: 7.6px;              /* 2 mm between the top row and the column */
   min-height: 0;
+  overflow: hidden;               /* text can never push the page taller */
 }
-.hf-left { min-width: 0; padding-bottom: 92px; }
+.hf-left {
+  min-width: 0;
+  padding-bottom: 92px;           /* clears the signature block */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
 .hf-notes { flex: 1 1 auto; min-height: 0; overflow: hidden; margin-top: 8px; }
 .hf-notes .rich-findings { height: 100%; display: flex; flex-direction: column; }
 .hf-notes .format-bar { flex: 0 0 auto; margin-bottom: 4px; }
@@ -979,11 +987,23 @@ a { color: var(--brand); }
 .hf-notes .fmt-size { width: 62px; }
 .hf-notes .rich-edit { flex: 1 1 auto; min-height: 0; overflow: auto; font-size: 11.2px; line-height: 1.36; }
 .hf-notes .rich-edit img { max-width: 100%; height: auto; }
-.hf-side4 { display: flex; flex-direction: column; justify-content: space-between; height: 100%; gap: 6.8px; }
-.hf-side { flex: 0 0 auto; display: flex; flex-direction: column; }
-.hf-side .hf-imgwrap { flex: 0 0 auto; width: 211.2px; height: 158.4px; }
-.hf-side img { width: 211.2px; height: 158.4px; object-fit: cover; object-position: center; background: #fff; border: .8px solid #000; }
-.hf-side .hf-noimg { width: 211.2px; height: 158.4px; flex: 0 0 auto; }
+/* The side column shares whatever height is left over, so four pictures in an
+   "I" and three or four in an inverted "L" always end on the same page. The gap
+   is 6.8 px ≈ 1.8 mm — under the 2 mm the form allows. */
+.hf-side4 {
+  display: flex; flex-direction: column;
+  height: 100%; min-height: 0;
+  gap: 6.8px;
+  justify-content: flex-start;
+}
+.hf-side { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.hf-side .hf-imgwrap { flex: 1 1 auto; width: 100%; height: auto; min-height: 0; }
+.hf-side img {
+  width: 100%; height: 100%;
+  object-fit: cover; object-position: center;
+  background: #fff; border: .8px solid #000;
+}
+.hf-side .hf-noimg { width: 100%; height: 100%; flex: 1 1 auto; min-height: 0; }
 .hf-side figcaption { flex: 0 0 auto; }
 .hf-loading { display: grid; place-items: center; color: #94a3b8; font-size: 9px; }
 

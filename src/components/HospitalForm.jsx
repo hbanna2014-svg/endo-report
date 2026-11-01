@@ -231,23 +231,31 @@ export default function HospitalForm({
           {/* title band ---------------------------------------------------- */}
           <div className="hf-band">{f.title}</div>
 
-          {/* three across the top ------------------------------------------ */}
-          <div className="hf-top3">
-            {[0, 1, 2].map((i) => (
-              <Figure
-                key={`t${i}`}
-                variant="hf-top"
-                index={i}
-                capacity={capacity}
-                media={f.top[i]}
-                src={f.top[i] ? thumbs[f.top[i].id] : ''}
-                editable={editable}
-                onPick={onImagePick || onAddPicture}
-                onClear={onImageClear}
-                onMove={onImageMove}
-              />
-            ))}
-          </div>
+          {/* pictures across the top — none at all for a four-picture "I" --- */}
+          {(f.topSlots || []).length ? (
+            <div
+              className="hf-top3"
+              style={{
+                gridTemplateColumns: `repeat(${f.topSlots.length}, 211.2px)`,
+                justifyContent: f.topSlots.length === 3 ? 'space-between' : 'flex-start',
+              }}
+            >
+              {f.topSlots.map((s, i) => (
+                <Figure
+                  key={`t${i}`}
+                  variant="hf-top"
+                  index={s.no - 1}
+                  capacity={capacity}
+                  media={s.media}
+                  src={s.media ? thumbs[s.media.id] : ''}
+                  editable={editable}
+                  onPick={onImagePick || onAddPicture}
+                  onClear={onImageClear}
+                  onMove={onImageMove}
+                />
+              ))}
+            </div>
+          ) : null}
 
           {/* text on the left, pictures down the right to the bottom -------- */}
           <div className="hf-cols">
@@ -264,34 +272,43 @@ export default function HospitalForm({
                 <InlineField className="hf-val" value={f.medication} editable={editable} onChange={field('procedure', 'medication')} placeholder="N/A" />
               </p>
 
-              <div className="hf-fh">FINDINGS :</div>
-              {f.findings.map((b, i) => (
-                <p key={`${b.heading}-${i}`} className="hf-fb">
-                  <b>
-                    <i>{b.heading}:-</i>
-                  </b>{' '}
-                  {b.text}
-                </p>
-              ))}
+              {/* When the operator brings their own Word report, the generated
+                  FINDINGS / Biopsy / COMMENTS lines repeat what that document
+                  already says. They are dropped so the document owns the whole
+                  writing area down to the signature rule. Without a document
+                  they still print, otherwise the sheet would have no findings. */}
+              {!f.hasCustomDoc ? (
+                <>
+                  <div className="hf-fh">FINDINGS :</div>
+                  {f.findings.map((b, i) => (
+                    <p key={`${b.heading}-${i}`} className="hf-fb">
+                      <b>
+                        <i>{b.heading}:-</i>
+                      </b>{' '}
+                      {b.text}
+                    </p>
+                  ))}
 
-              <div className="hf-comments">
-                <span className="hf-lbl">COMMENTS :</span>{' '}
-                {editable ? (
-                  <InlineField
-                    className="hf-comment-val"
-                    value={f.comments.join('; ')}
-                    editable
-                    onChange={field('procedure', 'comments')}
-                    placeholder="Diagnosis"
-                  />
-                ) : (
-                  f.comments.map((line, i) => (
-                    <div key={i} className="hf-comment-line">
-                      {line}
-                    </div>
-                  ))
-                )}
-              </div>
+                  <div className="hf-comments">
+                    <span className="hf-lbl">COMMENTS :</span>{' '}
+                    {editable ? (
+                      <InlineField
+                        className="hf-comment-val"
+                        value={f.comments.join('; ')}
+                        editable
+                        onChange={field('procedure', 'comments')}
+                        placeholder="Diagnosis"
+                      />
+                    ) : (
+                      f.comments.map((line, i) => (
+                        <div key={i} className="hf-comment-line">
+                          {line}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              ) : null}
 
               <div className="hf-notes" ref={notesRef}>
                 {editable ? (
@@ -309,25 +326,21 @@ export default function HospitalForm({
               </div>
             </div>
 
-            <div className="hf-side4">
-              {[0, 1, 2, 3].map((i) => {
-                const slot = 3 + i
-                const m = f.side[i]
-                return (
-                  <Figure
-                    key={`s${i}`}
-                    variant="hf-side"
-                    index={slot}
-                    capacity={capacity}
-                    media={m}
-                    src={m ? thumbs[m.id] : ''}
-                    editable={editable}
-                    onPick={onImagePick || onAddPicture}
-                    onClear={onImageClear}
-                    onMove={onImageMove}
-                  />
-                )
-              })}
+            <div className={`hf-side4 hf-side-${f.layoutMode || 'invertedL'}`}>
+              {(f.sideSlots || []).map((s, i) => (
+                <Figure
+                  key={`s${i}`}
+                  variant="hf-side"
+                  index={s.no - 1}
+                  capacity={capacity}
+                  media={s.media}
+                  src={s.media ? thumbs[s.media.id] : ''}
+                  editable={editable}
+                  onPick={onImagePick || onAddPicture}
+                  onClear={onImageClear}
+                  onMove={onImageMove}
+                />
+              ))}
             </div>
           </div>
 

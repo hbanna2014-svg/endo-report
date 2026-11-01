@@ -263,8 +263,36 @@ export function buildHospitalForm(model) {
   const affiliation = procedure.performingDoctorAffiliation || clinic.name || ''
 
   const plan = model.imagePlan || { slots: [] }
-  const top = plan.slots.filter((s) => s.no <= 3 && s.media).map((s) => ({ ...s.media, no: s.no }))
-  const side = plan.slots.filter((s) => s.no > 3 && s.media).map((s) => ({ ...s.media, no: s.no }))
+  const filled = plan.slots.filter((s) => s.media).map((s) => ({ ...s.media, no: s.no }))
+
+  /**
+   * Picture arrangement is chosen by how many pictures the report actually has,
+   * so the plate always fits on one page:
+   *
+   *   1–3 pictures → a single row across the top            ▬▬▬
+   *   4 pictures   → an “I”: one column down the right      ▌
+   *   5–7 pictures → an inverted “L”: three across the top  ███
+   *                  and the rest down the right              ▐
+   *
+   * The split used to be hard-coded at three-on-top/four-on-the-right, which
+   * forced a four-picture report into a shape it did not need and pushed the
+   * page over its height.
+   */
+  const layoutMode = filled.length <= 3 ? 'row' : filled.length === 4 ? 'column' : 'invertedL'
+  const { top, side } = (() => {
+    if (layoutMode === 'column') return { top: [], side: filled }
+    const t = filled.slice(0, Math.min(3, filled.length))
+    return { top: t, side: filled.slice(t.length) }
+  })()
+
+  /* On screen the plate keeps its empty "Add picture" slots so a picture can be
+     dropped into a specific place; the print and Word paths only want the
+     pictures that actually exist, hence the two shapes. */
+  const topCount = layoutMode === 'row' ? 3 : layoutMode === 'column' ? 0 : 3
+  const sideCount = layoutMode === 'row' ? 0 : 4
+  const topSlots = plan.slots.slice(0, topCount)
+  const sideSlots = plan.slots.slice(topCount, topCount + sideCount)
+  const hasCustomDoc = !!(model.reportDoc && model.reportDoc.custom)
 
   return {
     header: {
@@ -283,8 +311,12 @@ export function buildHospitalForm(model) {
     /* The rich text typed (or opened from Word) in the empty space of the form */
     notesHtml: model.reportDoc?.custom ? model.reportDoc.html : '',
     notesOverflow: !!procedure.docOverflow,
+    layoutMode,
+    hasCustomDoc,
     top,
     side,
+    topSlots,
+    sideSlots,
     extraImages: plan.slots.filter((s) => s.no > 7 && s.media).map((s) => ({ ...s.media, no: s.no })),
     signature: {
       name: doctorName,

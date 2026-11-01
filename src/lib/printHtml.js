@@ -523,11 +523,23 @@ export function buildHospitalPrintHtml(model) {
     flex: 1 1 auto; display: grid; grid-template-columns: 1fr var(--pic-w);
     gap: 4.5mm; margin-top: 2.2mm; min-height: 0;
   }
-  .col-left { min-width: 0; padding-bottom: 24mm; }
-  .side4 { display: flex; flex-direction: column; justify-content: space-between; height: 100%; gap: 1.8mm; }
-  .side4 figure { flex: 0 0 auto; display: flex; flex-direction: column; }
-  .side4 figure img { width: var(--pic-w); height: var(--pic-h); object-fit: var(--pic-fit); object-position: center; background: #fff; border: .8px solid #000; }
-  .side4 .noimg { flex: 1 1 auto; height: auto; min-height: 0; }
+  /* A report with only a row of pictures uses the full width for its text. */
+  .cols.row { grid-template-columns: 1fr; }
+  .col-left {
+    min-width: 0; padding-bottom: 24mm;
+    display: flex; flex-direction: column;
+    min-height: 0; overflow: hidden;
+  }
+  /* The column shares the remaining height equally, so 4 ("I") or 3-4
+     (inverted "L") pictures always end inside the same page. */
+  .side4 { display: flex; flex-direction: column; height: 100%; gap: 1.8mm; }
+  .side4 figure { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .side4 figure img {
+    width: 100%; height: 100%; flex: 1 1 auto; min-height: 0;
+    object-fit: var(--pic-fit); object-position: center;
+    background: #fff; border: .8px solid #000;
+  }
+  .side4 .noimg { flex: 1 1 auto; height: auto; min-height: 0; width: 100%; }
   .side4 figcaption { flex: 0 0 auto; }
 
   /* text ---------------------------------------------------------------- */
@@ -552,20 +564,18 @@ export function buildHospitalPrintHtml(model) {
       ${header}
       <div class="band"><h1>${esc(f.title)}</h1></div>
 
-      <div class="top3">${topFigures.map((m) => figure(m)).join('')}</div>
+      ${topFigures.length ? `<div class="top3">${topFigures.map((m) => figure(m)).join('')}</div>` : ''}
 
-      <div class="cols">
+      <div class="cols ${f.layoutMode || 'invertedL'}">
         <div class="col-left">
           <p class="line"><span class="lbl">Procedure :</span> <span class="val">${esc(f.procedure)}</span></p>
           <p class="line"><span class="lbl">Indication :</span> <span class="val">${esc(f.indication)}</span></p>
           <p class="line"><span class="lbl">Medication :</span> <span class="val">${esc(f.medication)}</span></p>
-          <div class="fh">FINDINGS :</div>
-          ${findings}
-          ${comments}
+          ${f.hasCustomDoc ? '' : `<div class="fh">FINDINGS :</div>${findings}${comments}`}
           ${notes}
           ${notesContinued}
         </div>
-        <div class="side4">${sideFigures.map((m) => figure(m, 'side')).join('')}</div>
+        ${sideFigures.length ? `<div class="side4">${sideFigures.map((m) => figure(m, 'side')).join('')}</div>` : ''}
       </div>
 
       <div class="sign">

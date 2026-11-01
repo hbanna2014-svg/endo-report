@@ -405,6 +405,13 @@ const hospitalProcedure = {
     { uid: 'h3', sectionId: 'body', findingId: 'normal_body', values: {}, notes: '' },
   ],
   comments: 'Antral Gastritis',
+  /* six pictures: an inverted "L" — three across, three down the side */
+  media: Array.from({ length: 6 }, (_, i) => ({
+    id: `hm${i + 1}`,
+    kind: 'image',
+    caption: `Picture ${i + 1}`,
+  })),
+  reportImages: ['hm1', 'hm2', 'hm3', 'hm4', 'hm5', 'hm6'],
 }
 
 const hospitalPatient = {
@@ -449,7 +456,46 @@ check(
     hHtml.includes('background: #fff; border: .8px solid #000'),
 )
 check('pictures are never matted in black', !hHtml.includes('background: #000'))
-check('the right-hand picture column reaches the bottom', hHtml.includes('class="side4"') && hHtml.includes('justify-content: space-between'))
+check(
+  'the right-hand picture column shares the remaining height',
+  hHtml.includes('class="side4"') && hHtml.includes('gap: 1.8mm') && hHtml.includes('flex: 1 1 0'),
+)
+check('six pictures use the inverted "L"', form.layoutMode === 'invertedL' && form.topSlots.length === 3 && form.sideSlots.length === 4)
+
+const fourModel = buildReportModel(
+  hospitalPatient,
+  { ...hospitalProcedure, reportImages: ['hm1', 'hm2', 'hm3', 'hm4'] },
+  hospitalTemplate,
+)
+const fourHtml = buildPrintHtml(fourModel)
+check(
+  'four pictures use the "I" column with no top row',
+  fourModel.hospital.layoutMode === 'column' &&
+    fourModel.hospital.topSlots.length === 0 &&
+    fourModel.hospital.sideSlots.length === 4 &&
+    !fourHtml.includes('class="top3"') &&
+    fourHtml.includes('class="side4"'),
+)
+
+const twoModel = buildReportModel(
+  hospitalPatient,
+  { ...hospitalProcedure, reportImages: ['hm1', 'hm2'] },
+  hospitalTemplate,
+)
+const twoHtml = buildPrintHtml(twoModel)
+check(
+  'two pictures use a single row across the top',
+  twoModel.hospital.layoutMode === 'row' &&
+    twoHtml.includes('class="top3"') &&
+    !twoHtml.includes('class="side4"'),
+)
+
+const docModel = buildReportModel(
+  hospitalPatient,
+  { ...hospitalProcedure, docHtml: '<p>Pasted Word report</p>' },
+  hospitalTemplate,
+)
+check('a pasted report hides the generated FINDINGS block', !buildPrintHtml(docModel).includes('FINDINGS :'))
 const sealedModel = buildReportModel(hospitalPatient, hospitalProcedure, hospitalTemplate, {
   sealDataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
 })
@@ -483,7 +529,12 @@ console.log('\n=== 12. Pictures reach the printed page ===\n')
 // The report model is built before the pictures are read from disk; the print
 // path hydrates them afterwards. The printer must still find them.
 const dryMedia = [{ id: 'pic-a', kind: 'image', no: 1, caption: 'Lower oesophagus', filePath: '/tmp/a.png' }]
-const dryProcedure = { ...hospitalProcedure, media: dryMedia, imageLayout: 'form7' }
+const dryProcedure = {
+  ...hospitalProcedure,
+  media: dryMedia,
+  reportImages: ['pic-a'],
+  imageLayout: 'form7',
+}
 const dryModel = buildReportModel(hospitalPatient, dryProcedure, hospitalTemplate)
 const hydrated = [{ ...dryMedia[0], dataUrl: 'data:image/png;base64,ZZZHYDRATED' }]
 const dryHtml = buildPrintHtml({ ...dryModel, media: hydrated })

@@ -4,6 +4,31 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.12 — 2026-11-02
+
+### Changed
+
+- **Generated headings disappear when the clinic brings its own Word report.** With a document in
+  the writing area, `FINDINGS :`, `Biopsy :- …` and `COMMENTS : …` repeated what the document
+  already said and are now left out. Without a document they still print, otherwise the sheet
+  would have no findings at all.
+- **The writing area runs down to the signature rule.** The left column is now a flex column and
+  the editor takes every pixel between `Medication :` and the grey rule above the signature.
+- **Pictures are pinned to the page.** A long findings text can no longer push the plate down or
+  spill the report onto a second sheet: the columns share a fixed height and clip, and the picture
+  column divides whatever height is left.
+- **The plate arranges itself by picture count**, always on one page:
+
+  | Pictures | Arrangement |
+  |---|---|
+  | 1–3 | one row across the top |
+  | 4 | an **“I”** — a single column down the right |
+  | 5–7 | an inverted **“L”** — three across, the rest down the right |
+
+  Frames share the available height equally with a **1.8 mm** gap (under the 2 mm the form allows),
+  so no picture is squeezed and none is pushed off the page. The printed page and the Word file
+  follow the same arrangement as the screen.
+
 ## 0.5.11 — 2026-11-02
 
 ### Fixed

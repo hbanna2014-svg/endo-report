@@ -817,19 +817,21 @@ function buildHospitalDocument(model) {
             borders: NO_BORDER,
             margins: { top: 0, bottom: 0, left: 0, right: 140 },
             children: [
-              topTable,
+              /* "I" layout: the pictures live only in the right column. */
+              ...(f.layoutMode === 'column' ? [] : [topTable]),
               line('Procedure :', f.procedure),
               line('Indication :', f.indication),
               line('Medication :', f.medication),
-              ...findingsChildren,
-              ...commentChildren,
+              /* A pasted Word report already carries its own headings. */
+              ...(f.hasCustomDoc ? [] : findingsChildren),
+              ...(f.hasCustomDoc ? [] : commentChildren),
             ],
           }),
           new TableCell({
-            width: { size: 3120, type: WidthType.DXA },
+            width: { size: f.layoutMode === 'row' ? 1 : 3120, type: WidthType.DXA },
             borders: NO_BORDER,
             margins: { top: 0, bottom: 0, left: 0, right: 0 },
-            children: sideCellChildren,
+            children: f.layoutMode === 'row' ? [] : sideCellChildren,
           }),
         ],
       }),
