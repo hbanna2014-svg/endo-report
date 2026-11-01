@@ -464,11 +464,40 @@ a { color: var(--brand); }
 
 .console-grid {
   display: grid; gap: 12px; min-height: 0; flex: 1;
-  grid-template-columns: 178px minmax(0, 1fr) minmax(430px, 600px);
+  grid-template-columns: 166px minmax(0, 1fr) minmax(390px, 44%);
   align-items: stretch;
 }
 .console-grid.view-findings,
 .console-grid.view-details { grid-template-columns: minmax(0, 1fr) 350px; }
+.console-grid.view-report { grid-template-columns: minmax(0, 1fr); }
+.console-grid.view-report .console-report,
+.console-grid.view-report .stage-host { display: none; }
+
+/* ---------------------------------------------------------------- report desk ---
+   The full-page view of the report sheet: the paper fills the working area and
+   the actions sit in a rail on the right, the way the endoscopy software the
+   clinic is used to lays it out. */
+.report-desk {
+  flex: 1; min-height: 0; display: grid;
+  grid-template-columns: minmax(0, 1fr) 176px; gap: 12px; align-items: stretch;
+}
+.sheet-scroll { min-height: 0; overflow: auto; padding: 2px 8px 22px 2px; }
+.sheet-scroll .report-paper { max-width: 900px; margin-left: auto; margin-right: auto; }
+/* The hospital sheet is absolutely positioned inside a 100 %-wide viewport and
+   scaled from its top-left corner, so it sat against the left edge. Cap the
+   viewport at A4 width (210 mm ≈ 794 px) and centre it. */
+.sheet-scroll .hf-viewport { width: 794px; max-width: 100%; margin: 0 auto; }
+.sheet-scroll .report-paper .lh .cn { font-size: 17px; }
+.sheet-scroll .report-paper h1 { font-size: 13.5px; }
+.report-rail {
+  display: flex; flex-direction: column; gap: 6px;
+  align-self: start; position: sticky; top: 0;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 8px; box-shadow: var(--shadow-1);
+}
+.report-rail .btn { justify-content: flex-start; width: 100%; }
+.rail-divider { height: 1px; background: var(--line); margin: 4px 0; }
+.rail-note { font-size: 10.5px; line-height: 1.45; color: var(--ink-3); margin-top: 6px; }
 
 .console-center { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; }
 .console-center.wide { gap: 0; }
@@ -511,9 +540,10 @@ a { color: var(--brand); }
 .stage-head {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-bottom: 8px;
 }
-/* The live console's centre column is narrow; let the three pickers wrap
-   instead of truncating their labels to "No capture de". */
-.stage-head > .field { flex: 1 1 132px; min-width: 0; }
+/* The live console's centre column is narrow. Give each picker a real minimum
+   width and let them wrap onto a second line rather than clipping the value to
+   "No capture de…" — on a 1366 px laptop all three still fit on one row. */
+.stage-head > .field { flex: 1 1 170px; min-width: 140px; }
 .stage-head label, .stage-head .field > label { color: #94a3b8; }
 .stage-head .select { background: #16233d; border-color: #26364f; color: #e2e8f0; }
 .stage-wrap .row label { color: #cbd5e1; }

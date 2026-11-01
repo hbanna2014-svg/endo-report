@@ -72,6 +72,7 @@ function Topbar({ children }) {
 
 const VIEWS = [
   { value: 'console', label: 'Live console', icon: MonitorPlay },
+  { value: 'report', label: 'Report page', icon: FileText },
   { value: 'findings', label: 'Findings', icon: ClipboardList },
   { value: 'details', label: 'Procedure details', icon: Stethoscope },
 ]
@@ -113,6 +114,8 @@ export default function Workspace({
 
   const menuActionsRef = useRef({})
   const saveTimer = useRef(null)
+  const patientSaveTimer = useRef(null)
+  const saveRef = useRef(null)
   const captureHandler = useRef(() => {})
 
   /* ------------------------------------------------------------------ load --- */
@@ -232,6 +235,10 @@ export default function Workspace({
     [procedure, patientId, toast, onSaved],
   )
 
+  // Used by background bookkeeping (linking the report to a doctor record) that
+  // must persist without pretending the operator made an edit.
+  saveRef.current = save
+
   // Debounced autosave keeps the record safe without interrupting documentation.
   useEffect(() => {
     if (!dirty || !procedure) return undefined
@@ -332,16 +339,25 @@ export default function Workspace({
   )
 
   const applyDoctor = useCallback(
-    async (doctorId) => {
+    async (doctorId, opts = {}) => {
       const d = (doctors || []).find((x) => x.id === doctorId)
-      patch({
+      const changes = {
         performingDoctorId: doctorId || '',
         performingDoctor: d?.name || '',
         performingDoctorDegrees: d?.degrees || '',
         performingDoctorDesignation: d?.designation || '',
         performingDoctorAffiliation: d?.affiliation || '',
         performingDoctorSealPath: d?.sealPath || '',
-      })
+      }
+      if (opts.quiet) {
+        // Linking the report to a doctor record is bookkeeping, not an edit the
+        // operator made. It must not raise "Unsaved changes…" the moment a
+        // report is opened, so update the state and persist it in the background.
+        setProcedure((p) => ({ ...p, ...changes }))
+        setTimeout(() => saveRef.current?.({ silent: true, changes }), 250)
+      } else {
+        patch(changes)
+      }
       if (!doctorId) {
         setSealUrl('')
         return
@@ -364,12 +380,12 @@ export default function Workspace({
     if (!procedure || procedure.performingDoctorId) return
     const byName = (doctors || []).find((d) => d.name === procedure.performingDoctor)
     if (byName) {
-      applyDoctor(byName.id)
+      applyDoctor(byName.id, { quiet: true })
       return
     }
     if (procedure.performingDoctor) return
     const preferred = (doctors || []).find((d) => d.isDefault && d.active !== false) || endoscopists[0]
-    if (preferred) applyDoctor(preferred.id)
+    if (preferred) applyDoctor(preferred.id, { quiet: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [procedure?.id, doctors])
 
@@ -411,7 +427,14 @@ export default function Workspace({
   })
 
   // The card stays warm while switching tabs; leaving the patient closes it.
-  useEffect(() => () => closeWarmStream(), [])
+  useEffect(
+    () => () => {
+      closeWarmStream()
+      clearTimeout(patientSaveTimer.current)
+      clearTimeout(saveTimer.current)
+    },
+    [],
+  )
 
   /* ------------------------------------------------------ picture plate edits --- */
 
@@ -812,6 +835,60 @@ export default function Workspace({
 
   /* ----------------------------------------------------------------- render --- */
 
+  /**
+   * One report sheet, rendered either in the narrow column beside the live
+   * picture (compact) or as a full page in the "Report page" tab. Both use the
+   * same component and the same model, so the sheet on screen is exactly what
+   * the printer and the Word export produce.
+   */
+  const renderReportSheet = (compact) => {
+    if (!model) return null
+    return (
+      <ReportView
+        model={model}
+        compact={compact}
+        editable
+        docMode={!!model.reportDoc?.custom}
+        onDocSave={(html) => patch({ docHtml: html })}
+        onDocReset={() => patch({ docHtml: '', docName: '' })}
+        onImagePick={(i) => setPicker({ index: i })}
+        onImageClear={clearPicture}
+        onImageMove={movePicture}
+        onImageCaption={setPlateCaption}
+        onAddPicture={(i) => {
+          const idx = Number.isInteger(i) ? i : slotIds.indexOf(null)
+          setPicker({ index: idx >= 0 ? idx : null })
+        }}
+        onField={(kind, key, value) => {
+          if (kind === 'patient') {
+            setPatient((p) => {
+              const next = { ...p, [key]: value }
+              // Persist to the patient record itself, debounced so typing does
+              // not write on every keystroke.
+              clearTimeout(patientSaveTimer.current)
+              patientSaveTimer.current = setTimeout(() => {
+                api.patients.update(next).catch(() => {})
+              }, 400)
+              return next
+            })
+          } else {
+            // Re-measuring a field and getting the same value back is not an edit.
+            if (procedure[key] === value) return
+            patch({ [key]: value })
+          }
+        }}
+        onRichSave={(html) => patch({ reportHtml: html })}
+        onRichReset={() => patch({ reportHtml: '' })}
+        onPrint={doPrint}
+        onDocx={doDocx}
+        onPdf={doPdf}
+        onCopy={doCopy}
+        astats={analysis?.audit}
+        busy={busy}
+      />
+    )
+  }
+
   if (!procedureId) {
     return (
       <>
@@ -1004,6 +1081,41 @@ export default function Workspace({
               </div>
             ) : null}
 
+            {view === 'report' ? (
+              <div className="report-desk">
+                <div className="sheet-scroll">{renderReportSheet(false)}</div>
+                <aside className="report-rail">
+                  <Button size="sm" variant="ghost" icon={ArrowLeft} onClick={() => setView('console')}>
+                    Back to capture
+                  </Button>
+                  <Button size="sm" variant="ghost" icon={ImagePlusIcon} onClick={() => setImagePlus(true)}>
+                    Image Plus
+                  </Button>
+                  <div className="rail-divider" />
+                  <Button size="sm" variant="primary" icon={Save} onClick={() => save({})} disabled={saving}>
+                    Update report
+                  </Button>
+                  <Button size="sm" icon={Printer} onClick={doPrint} disabled={busy}>
+                    Print report
+                  </Button>
+                  <Button size="sm" icon={FileText} onClick={doDocx} disabled={busy}>
+                    Export report
+                  </Button>
+                  <Button size="sm" icon={FileText} onClick={doPdf} disabled={busy}>
+                    Save as PDF
+                  </Button>
+                  <div className="rail-divider" />
+                  <Button size="sm" variant="ghost" icon={ArrowLeft} onClick={onClose}>
+                    Close report
+                  </Button>
+                  <div className="rail-note">
+                    Click a picture slot on the sheet to place a captured frame, or use <strong>Image Plus</strong> for the
+                    6-picture sheet.
+                  </div>
+                </aside>
+              </div>
+            ) : null}
+
             {view === 'findings' ? (
               <div className="console-form">
                 <FindingsPanel
@@ -1121,43 +1233,7 @@ export default function Workspace({
                   </Button>
                 </div>
 
-                <div className="report-scroll">
-                  <ReportView
-                    model={model}
-                    compact
-                    editable
-                    docMode={!!model.reportDoc?.custom}
-                    onDocSave={(html) => patch({ docHtml: html })}
-                    onDocReset={() => patch({ docHtml: '', docName: '' })}
-                    onImagePick={(i) => setPicker({ index: i })}
-                    onImageClear={clearPicture}
-                    onImageMove={movePicture}
-                    onImageCaption={setPlateCaption}
-                    onAddPicture={(i) => {
-                      const idx = Number.isInteger(i) ? i : slotIds.indexOf(null)
-                      setPicker({ index: idx >= 0 ? idx : null })
-                    }}
-                    onField={(kind, key, value) => {
-                      if (kind === 'patient') {
-                        setPatient((p) => {
-                          const next = { ...p, [key]: value }
-                          api.patients.update(next.id, next).catch(() => {})
-                          return next
-                        })
-                      } else {
-                        patch({ [key]: value })
-                      }
-                    }}
-                    onRichSave={(html) => patch({ reportHtml: html })}
-                    onRichReset={() => patch({ reportHtml: '' })}
-                    onPrint={doPrint}
-                    onDocx={doDocx}
-                    onPdf={doPdf}
-                    onCopy={doCopy}
-                    astats={analysis?.audit}
-                    busy={busy}
-                  />
-                </div>
+                <div className="report-scroll">{renderReportSheet(true)}</div>
               </>
             ) : null}
           </aside>

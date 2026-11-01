@@ -46,18 +46,24 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
       {showDevicePicker ? (
         <div className="stage-head">
           <Field label="Capture device">
-            <Select
-              value={deviceId}
-              onChange={(e) => {
-                setDeviceId(e.target.value)
-                if (live) {
-                  stopStream()
-                  setTimeout(startStream, 250)
-                }
-              }}
-              options={devices.map((d, i) => ({ value: d.deviceId, label: d.label || `Video input ${i + 1}` }))}
-              placeholder={devices.length ? 'Select a device…' : 'No capture device found'}
-            />
+            {/* The rescan button sits inside the field so the three pickers stay
+                on one row on a 1366 px laptop. */}
+            <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+              <Select
+                value={deviceId}
+                onChange={(e) => {
+                  setDeviceId(e.target.value)
+                  if (live) {
+                    stopStream()
+                    setTimeout(startStream, 250)
+                  }
+                }}
+                options={devices.map((d, i) => ({ value: d.deviceId, label: d.label || `Video input ${i + 1}` }))}
+                placeholder={devices.length ? 'Select a device…' : 'No device found'}
+                style={{ flex: 1, minWidth: 0 }}
+              />
+              <Button size="sm" icon={RefreshCw} onClick={refreshDevices} title="Rescan for capture devices" />
+            </div>
           </Field>
           <Field label="Section for the next capture">
             <Select
@@ -74,14 +80,26 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
               options={CAPTURE_QUALITY.map((q) => ({ value: q.id, label: q.label }))}
             />
           </Field>
-          <Button size="sm" icon={RefreshCw} onClick={refreshDevices} title="Rescan for capture devices" />
         </div>
       ) : null}
 
       {error ? (
         <div className="banner err" style={{ marginBottom: 10 }}>
           <MonitorOff size={17} style={{ flex: '0 0 17px', marginTop: 1 }} />
-          <div className="small">{error}</div>
+          <div className="small" style={{ flex: 1 }}>
+            {error}
+            <div className="row" style={{ gap: 6, marginTop: 8 }}>
+              <Button size="sm" variant="primary" icon={RefreshCw} onClick={startStream}>
+                Try again
+              </Button>
+              <Button size="sm" icon={RefreshCw} onClick={refreshDevices}>
+                Rescan devices
+              </Button>
+              <span className="tiny muted">
+                Tip: most “could not start video source” errors clear as soon as the other program releases the card.
+              </span>
+            </div>
+          </div>
         </div>
       ) : null}
 

@@ -11,13 +11,30 @@
  */
 
 import { createRequire } from 'node:module'
+import { spawnSync } from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const require = createRequire(import.meta.url)
-const db = require(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'electron', 'db.cjs'))
+const selfPath = fileURLToPath(import.meta.url)
+const db = require(path.join(path.dirname(selfPath), '..', 'electron', 'db.cjs'))
 
-const [stage, dir] = process.argv.slice(2)
+let [stage, dir] = process.argv.slice(2)
+
+// `npm run test:legacy` invokes this file with no arguments. Run the whole
+// journey here: build an old-shaped database in a fresh temporary folder, then
+// open it with the current build. The two stages run in separate processes
+// because db.init() keeps a single PGlite instance per process.
+if (!stage) {
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'endoreport-legacy-'))
+  console.log(`Legacy database folder: ${dir}\n`)
+  const created = spawnSync(process.execPath, [selfPath, 'create', dir], { stdio: 'inherit' })
+  if (created.status !== 0) process.exit(created.status || 1)
+  const opened = spawnSync(process.execPath, [selfPath, 'open', dir], { stdio: 'inherit' })
+  process.exit(opened.status ?? 1)
+}
 let failures = 0
 const check = (label, ok, detail) => {
   console.log(`${ok ? 'PASS ' : 'FAIL '} ${label}${ok || !detail ? '' : ` — ${detail}`}`)

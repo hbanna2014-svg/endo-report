@@ -133,7 +133,9 @@ export default function HospitalForm({
   const notesRef = useRef(null)
   const onFieldRef = useRef(onField)
   onFieldRef.current = onField
-  const lastOverflow = useRef(null)
+  // Seed with what the record already says: a report that merely re-measures the
+  // same layout must not look edited the moment it is opened.
+  const lastOverflow = useRef(!!model.notesOverflow)
   const [scale, setScale] = useState(1)
 
   useLayoutEffect(() => {
@@ -145,8 +147,6 @@ export default function HospitalForm({
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-
-  if (!f) return null
 
   /* The notes area has a fixed place on the form. If the text no longer fits,
      the printed version moves the whole block to a second page rather than
@@ -161,6 +161,9 @@ export default function HospitalForm({
     }
     return undefined
   }, [editable, model.reportDoc?.html])
+
+  // Every hook must run on every render; the bail-out lives after them.
+  if (!f) return null
 
   const capacity = 7
   const field = (kind, key) => (v) => onField?.(kind, key, v)

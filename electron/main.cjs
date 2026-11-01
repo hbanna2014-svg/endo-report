@@ -9,7 +9,7 @@
  *   • back up and restore the whole clinic dataset
  */
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, safeStorage, clipboard } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, safeStorage, clipboard, session } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
 const fsp = require('node:fs/promises')
@@ -118,6 +118,14 @@ function createWindow() {
   // writes a screenshot and exits with a diagnostics report. Used by the
   // automated UI check; harmless in normal use because it is opt-in.
   if (process.env.ENDOREPORT_CAPTURE) {
+    const rendererErrors = []
+    mainWindow.webContents.on('console-message', (_event, level, message) => {
+      // 2 = warning, 3 = error
+      if (level >= 2) rendererErrors.push(message)
+    })
+    mainWindow.webContents.on('render-process-gone', (_event, details) => {
+      console.log('[RENDER_GONE]', JSON.stringify(details))
+    })
     mainWindow.webContents.once('did-finish-load', async () => {
       const target = process.env.ENDOREPORT_CAPTURE
       const waitMs = Number(process.env.ENDOREPORT_CAPTURE_DELAY || 2600)
@@ -158,6 +166,12 @@ function createWindow() {
             await new Promise((r) => setTimeout(r, 1100))
           }
         }
+        // Optional final probe: arbitrary JS whose (awaited) result is logged.
+        // Used to verify that a UI interaction really reached the database.
+        let scriptResult = null
+        if (process.env.ENDOREPORT_CAPTURE_JS) {
+          scriptResult = await mainWindow.webContents.executeJavaScript(process.env.ENDOREPORT_CAPTURE_JS, true)
+        }
         await new Promise((r) => setTimeout(r, waitMs))
         const image = await mainWindow.webContents.capturePage()
         fs.mkdirSync(path.dirname(target), { recursive: true })
@@ -171,7 +185,10 @@ function createWindow() {
            }))()`,
           true,
         )
-        console.log('[CAPTURE]', JSON.stringify({ ok: true, target, probe }))
+        console.log(
+          '[CAPTURE]',
+          JSON.stringify({ ok: true, target, probe, scriptResult, rendererErrors: rendererErrors.slice(0, 12) }),
+        )
       } catch (err) {
         console.log('[CAPTURE_ERROR]', err.message)
       }
@@ -1207,6 +1224,19 @@ if (!gotLock) {
   })
 
   app.whenReady().then(async () => {
+    // The renderer is a file:// page, so Chromium asks before it hands over a
+    // camera. Without an explicit handler a capture card can be enumerated but
+    // never opened. Only media is granted; every other permission is denied.
+    try {
+      const ses = session.defaultSession
+      ses.setPermissionRequestHandler((_wc, permission, callback) => {
+        callback(permission === 'media')
+      })
+      ses.setPermissionCheckHandler((_wc, permission) => permission === 'media')
+    } catch (err) {
+      console.error('[EndoReport] could not install the media permission handler:', err.message)
+    }
+
     try {
       dbReady = bootSequence()
       await dbReady

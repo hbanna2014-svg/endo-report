@@ -4,6 +4,78 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.11 — 2026-11-02
+
+### Fixed
+
+- **The capture card could not be opened** — the device appeared in the list but pressing
+  *Start live view* failed with “Could not start video source”. A video processor only supports
+  a fixed set of modes (a PAL unit answers 720×576), and the app asked for 4K first, which the
+  driver rejected outright. Opening is now staged:
+  1. the chosen device at the chosen resolution,
+  2. the chosen device at its own default mode,
+  3. the device id without `exact`,
+  4. any camera.
+  `NotReadableError` is retried once after 650 ms, because a card that was just released by the
+  endoscopy unit software needs a moment. When the card opens at its own mode the app says so
+  instead of pretending the requested resolution was used.
+- **Camera permission is now granted explicitly.** The renderer is a `file://` page; without a
+  `setPermissionRequestHandler` a card can be enumerated but never opened. Only `media` is
+  allowed, every other permission stays denied.
+- **The error message is now actionable** and the panel offers *Try again* and *Rescan devices*.
+  Each failure is explained in clinic language — card held by another program (OBS, the
+  endoscopy unit software, Teams, Zoom), wrong resolution, driver refused to start, device
+  unplugged.
+- The capture toolbar no longer wraps its rescan button onto a second row when the report column
+  is wide; the button sits inside the device field.
+
+### Added
+
+- **Report page** — a full-page view of the report sheet, laid out the way the clinic's previous
+  endoscopy software does it: patient band, the 3-pictures-on-top + 4-down-the-right plate, the
+  findings and comments text, and an action rail on the right (*Back to capture*, *Image Plus*,
+  *Update report*, *Print report*, *Export report*, *Save as PDF*, *Close report*). Clicking an
+  empty slot on the sheet places a captured frame in it.
+- The sheet is the **same component that prints**, so the page on screen is exactly what the
+  printer and the Word export produce — no separate preview to drift out of step.
+- The live console's report column widened from a fixed 430–600 px to 390 px–44 % of the working
+  area, so the plate is readable beside the live picture.
+
+## 0.5.10 — 2026-11-01
+
+### Fixed
+
+- **Patient details edited on the report sheet were never saved.** Changing the name, age, sex
+  or registration number directly on the report updated the on-screen preview but the write
+  always failed — the edit disappeared as soon as the report was reopened. The call passed
+  `(id, patient)` to a bridge function that takes only the patient object, and the rejection was
+  swallowed. It is now written to the patient record, debounced by 400 ms so typing does not
+  hammer the database.
+- **"Unsaved changes…" appeared the moment a report was opened.** Linking an older report to a
+  doctor record (to pick up the degrees and the signature seal) was treated as an operator edit,
+  so every open marked the report dirty and fired an autosave three seconds later. That link is
+  bookkeeping now: it updates the screen and is persisted quietly in the background without
+  touching the dirty indicator.
+- **The report template preview printed `[not recorded]`.** The built-in sample left out the
+  value its example finding requires, so the live sample read "…[not recorded] mucosal erythema"
+  and "Antral gastritis ([not recorded])". The sample now carries `extent: 'patchy antral'`.
+- **`npm run test:legacy` crashed** with `The "path" argument must be of type string`. The script
+  expects `<stage> <dir>` on the command line and the npm script passed neither. With no
+  arguments it now creates a temporary folder and runs the create → open journey itself, in two
+  processes (a single process can only hold one PGlite instance).
+- **Capture toolbar values were clipped** — the device picker read "No capture de…" and the
+  quality picker "Highest the device s…". The three pickers have a 170 px basis with a 140 px
+  minimum and wrap to a second line instead of truncating; the quality labels are shorter
+  ("Highest available", "Full HD 1920×1080", "HD 1280×720", "PAL 720×576") and the empty state
+  reads "No device found".
+
+### Added
+
+- Headless diagnostics for the automated UI check: `ENDOREPORT_CAPTURE_JS` runs a snippet after
+  the scripted clicks and logs its awaited result, so an interaction can be proven to reach the
+  database rather than just looking right on screen. The capture hook now also reports renderer
+  console warnings and errors.
+
 ## 0.5.9 — 2026-10-26
 
 ### Live capture

@@ -67,7 +67,9 @@ function sampleModel(template) {
     complications: 'None.',
     biopsy: { taken: true, sites: 'Antrum 2, body 2', count: '2' },
     entries: [
-      { uid: 'a', sectionId: 'antrum', findingId: 'antral_gastritis_erythematous', values: {}, notes: '' },
+      // The sample must carry the values its finding needs, otherwise the live
+      // preview prints "[not recorded]" and looks like a broken report.
+      { uid: 'a', sectionId: 'antrum', findingId: 'antral_gastritis_erythematous', values: { extent: 'patchy antral' }, notes: '' },
       { uid: 'b', sectionId: 'oesophagus', findingId: 'normal_oesophagus', values: {}, notes: '' },
     ],
     status: 'draft',

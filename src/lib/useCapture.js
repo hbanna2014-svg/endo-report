@@ -10,15 +10,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api } from './api.js'
+import { buildConstraintStages, describeMediaError } from './captureConstraints.js'
 import { sectionsForProcedure } from './anatomy.js'
 import { useToast } from '../components/ui.jsx'
 
 /** Capture card / video processor resolutions we offer. "max" asks for the most the device has. */
+// Labels stay short so the whole value is readable inside the capture toolbar,
+// which has three selects side by side on a 1366 px laptop.
 export const CAPTURE_QUALITY = [
-  { id: 'max', label: 'Highest the device supports', size: { width: 3840, height: 2160 } },
-  { id: '1080', label: 'Full HD — 1920 × 1080', size: { width: 1920, height: 1080 } },
-  { id: '720', label: 'HD — 1280 × 720', size: { width: 1280, height: 720 } },
-  { id: 'pal', label: 'PAL — 720 × 576 (older processors)', size: { width: 720, height: 576 } },
+  { id: 'max', label: 'Highest available', size: { width: 3840, height: 2160 } },
+  { id: '1080', label: 'Full HD 1920×1080', size: { width: 1920, height: 1080 } },
+  { id: '720', label: 'HD 1280×720', size: { width: 1280, height: 720 } },
+  { id: 'pal', label: 'PAL 720×576', size: { width: 720, height: 576 } },
 ]
 
 function pickMime() {
@@ -213,6 +216,40 @@ export default function useCapture({
     if (settings?.width) setFrameSize({ width: settings.width, height: settings.height })
   }, [deviceId])
 
+  /**
+   * Opens the card, relaxing the request until something works.
+   *
+   * A video processor / capture card only supports a fixed set of modes — a PAL
+   * unit answers 720×576 and refuses anything else with NotReadableError, which
+   * is exactly the "Could not start video source" failure seen on real hardware.
+   * Trying the exact device without a size, then the device id without "exact",
+   * then any camera, gets a picture on screen instead of an error box.
+   */
+  const openStream = useCallback(async (stages) => {
+    let lastErr = null
+    for (let i = 0; i < stages.length; i += 1) {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const stream = await navigator.mediaDevices.getUserMedia({ video: stages[i], audio: false })
+          return { stream, stage: i }
+        } catch (err) {
+          lastErr = err
+          // A permission refusal will not improve by trying other constraints.
+          if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError') throw err
+          // The card may still be releasing itself — give it one short pause.
+          if (err?.name === 'NotReadableError' && attempt === 0) {
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise((r) => setTimeout(r, 650))
+            continue
+          }
+          break
+        }
+      }
+    }
+    throw lastErr
+  }, [])
+
   const startStream = useCallback(async () => {
     setError('')
     try {
@@ -221,13 +258,8 @@ export default function useCapture({
         return
       }
       const want = (CAPTURE_QUALITY.find((q) => q.id === quality) || CAPTURE_QUALITY[0]).size
-      const constraints = {
-        video: deviceId
-          ? { deviceId: { exact: deviceId }, width: { ideal: want.width }, height: { ideal: want.height } }
-          : { width: { ideal: want.width }, height: { ideal: want.height } },
-        audio: false,
-      }
-      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      const stages = buildConstraintStages(deviceId, want)
+      const { stream, stage } = await openStream(stages)
       streamRef.current = stream
       warm.stream = stream
       warm.deviceId = deviceId || ''
@@ -256,13 +288,19 @@ export default function useCapture({
         setLive(true)
       }
       refreshDevices()
+      if (stage > 0) {
+        const s = stream.getVideoTracks()[0]?.getSettings?.()
+        toast.push({
+          tone: 'info',
+          title: 'Card opened at its own mode',
+          body: `${s?.width ? `${s.width} × ${s.height}. ` : ''}This capture card does not offer the requested resolution, so the hardware default was used.`,
+        })
+      }
     } catch (err) {
       stopStream()
-      setError(
-        `Could not open the capture device: ${err.message}. Check that the video processor / capture card is connected and that no other program (OBS, the endoscopy unit software) is using it.`,
-      )
+      setError(describeMediaError(err))
     }
-  }, [deviceId, quality, refreshDevices, stopStream])
+  }, [deviceId, openStream, quality, refreshDevices, stopStream, toast])
 
   useEffect(() => {
     if (!autoStart) return

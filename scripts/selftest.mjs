@@ -12,6 +12,7 @@ import { analyse, emptyProcedure, findingsForSection } from '../src/lib/autoRepo
 import { buildImagePlan, buildReportModel, imageLayoutDef, renderPlainText, DEFAULT_TEMPLATE, buildHospitalForm } from '../src/lib/reportModel.js'
 import { buildPrintHtml, buildImagePlusHtml } from '../src/lib/printHtml.js'
 import { sectionsForProcedure } from '../src/lib/anatomy.js'
+import { buildConstraintStages, describeMediaError } from '../src/lib/captureConstraints.js'
 
 const require = createRequire(import.meta.url)
 const docx = require('../electron/docx.cjs')
@@ -488,6 +489,27 @@ const hydrated = [{ ...dryMedia[0], dataUrl: 'data:image/png;base64,ZZZHYDRATED'
 const dryHtml = buildPrintHtml({ ...dryModel, media: hydrated })
 check('print finds a picture hydrated after the model was built', dryHtml.includes('ZZZHYDRATED'))
 check('no empty slot is left behind for that picture', !dryHtml.includes('No Preview Available'))
+
+/* ========================================================================== */
+console.log('\n=== 7. Capture card fallback order ===\n')
+
+const want4k = { width: 3840, height: 2160 }
+const withDevice = buildConstraintStages('cam-1', want4k)
+const withoutDevice = buildConstraintStages('', want4k)
+console.log(`  device stages: ${withDevice.length}, no-device stages: ${withoutDevice.length}`)
+
+check('a chosen device gets four progressively looser stages', withDevice.length === 4)
+check('stage 1 asks for the device and the wanted size', withDevice[0].deviceId?.exact === 'cam-1' && withDevice[0].width?.ideal === 3840)
+check('stage 2 drops the size so the driver picks its own mode', withDevice[1].deviceId?.exact === 'cam-1' && withDevice[1].width === undefined)
+check('stage 3 drops "exact"', withDevice[2].deviceId === 'cam-1' && withDevice[2].deviceId?.exact === undefined)
+check('stage 4 falls back to any camera', withDevice[3].deviceId === undefined && withDevice[3].width?.ideal === 3840)
+check('no device selected still ends with a bare request', withoutDevice.length === 2 && withoutDevice[1] === true)
+
+const busyErr = describeMediaError(Object.assign(new Error('x'), { name: 'NotReadableError' }))
+const constrainedErr = describeMediaError(Object.assign(new Error('x'), { name: 'OverconstrainedError' }))
+console.log(`  NotReadableError -> ${busyErr.slice(0, 60)}…`)
+check('NotReadableError explains that another program holds the card', /another program/i.test(busyErr))
+check('OverconstrainedError points at PAL 720×576', /PAL/.test(constrainedErr))
 
 /* ========================================================================== */
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}\n`)
