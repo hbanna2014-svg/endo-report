@@ -81,10 +81,45 @@ async function run() {
   const found = await db.listPatients('E2E')
   check('patient is findable by name search', found.length === 1 && found[0].id === patient.id)
 
+  console.log('\n--- 2b. One patient, never a duplicate ---')
+
+  const dupA = await db.savePatient({
+    name: 'Duplicate Check',
+    age: '40',
+    sex: 'Male',
+    phone: '01777-123456',
+    address: '12 Test Road',
+    indication: 'First visit',
+  })
+  // Same person, phone typed with a dash this time, and two fields left blank.
+  const dupB = await db.savePatient({
+    name: 'Duplicate Check',
+    age: '40',
+    sex: 'Male',
+    phone: '01777123456',
+  })
+  check('re-registering the same phone reuses the record', dupB.id === dupA.id && dupB.matchedExisting === true)
+  check('no second row was created', (await db.listPatients('Duplicate Check')).length === 1)
+  check('blank fields did not erase what was already stored', dupB.address === '12 Test Road' && dupB.indication === 'First visit')
+
+  const nameA = await db.savePatient({ name: 'Name Match', age: '31', sex: 'Female' })
+  const nameB = await db.savePatient({ name: '  name match ', age: '31', sex: 'Female' })
+  check('same name + age + sex reuses the record', nameB.id === nameA.id && nameB.matchedExisting === true)
+
+  const other = await db.savePatient({ name: 'Duplicate Check', age: '41', sex: 'Male', phone: '01888-000000' })
+  check('a genuinely different patient is still created', other.id !== dupA.id && !other.matchedExisting)
+
+  for (const p of [dupA, nameA, other]) {
+    // eslint-disable-next-line no-await-in-loop
+    await db.deletePatient(p.id)
+  }
+  check('test patients cleaned up', (await db.listPatients('Duplicate Check')).length === 0)
+
   console.log('\n--- 3. Procedure + findings persistence ---')
   const procedure = {
     ...emptyProcedure('colonoscopy'),
     procedureDate: '2026-10-16',
+    procedureLabel: 'COLONOSCOPY',
     performingDoctor: 'Dr. Operator',
     extentReached: 'Caecum',
     prepQuality: 'Good',
@@ -248,6 +283,22 @@ async function run() {
   check('the plate picture lands in word/media', !!mz.file('word/media/er-plate-1001.png'))
   check('the picture relationship resolves from word/', mRels.includes('Target="media/er-plate-1001.png"'))
   check('no placeholder is left in the merged file', !/\{\{[A-Z_]+\}\}/.test(mXml))
+
+  console.log('\n--- 6b. Autocomplete sources ---')
+  const referrers = await db.listReferrers()
+  check('referrers include a name saved on a patient', referrers.includes('Dr. Referrer'), referrers.join(', '))
+  check('referrers include the doctor directory', referrers.includes('Dr. Test Endoscopist'), referrers.join(', '))
+  check('referrer list is de-duplicated and sorted', referrers.length === new Set(referrers).size)
+
+  const labels = await db.listProcedureLabels()
+  check('a saved procedure name is remembered', labels.includes('COLONOSCOPY'), labels.join(', '))
+  await db.rememberProcedureLabel('colonoscopy')
+  const labels2 = await db.listProcedureLabels()
+  check(
+    'the same name is not stored twice with different case',
+    labels2.filter((l) => l.toLowerCase() === 'colonoscopy').length === 1,
+    labels2.join(', '),
+  )
 
   await db.setSetting('prefs', { imageColumns: 3, language: 'en' })
   const prefs = await db.getSetting('prefs', null)

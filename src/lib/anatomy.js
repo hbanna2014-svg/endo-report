@@ -166,6 +166,26 @@ export const SECTIONS_BY_PROCEDURE = {
   colonoscopy: COLON_SECTIONS,
 }
 
+/**
+ * Works out which clinical template a typed procedure name belongs to, so the
+ * clinic can write "UPPER G.I. ENDOSCOPY" or "LOWER GI" instead of picking from
+ * a fixed list. Anything unrecognised is treated as an upper GI study, which is
+ * the safe default for an endoscopy unit.
+ */
+export function procedureTypeFromLabel(label) {
+  const t = String(label || '').toLowerCase()
+  // The words, not substrings: "colonoscopy" also contains "colon", and a bare
+  // "endoscopy" must not turn a lower GI study into a combined one.
+  const saysColonoscopy = /\bcolonoscop/.test(t)
+  const saysEndoscopy = /\bendoscop/.test(t)
+  const lowerGi = /lower gi|sigmoid|rectum|rectal|ileocolon/.test(t)
+  const upperGi = /upper gi|gastr|oesoph|esoph|duoden|\bogd\b|panendoscop/.test(t)
+
+  if ((saysColonoscopy && saysEndoscopy) || (upperGi && (saysColonoscopy || lowerGi))) return 'both'
+  if (saysColonoscopy || lowerGi) return 'colonoscopy'
+  return 'ogd'
+}
+
 /** Which section list a procedure type needs — "both" merges both sets. */
 export function sectionsForProcedure(type) {
   if (type === 'ogd') return OGD_SECTIONS

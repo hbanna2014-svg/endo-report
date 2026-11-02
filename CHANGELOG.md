@@ -4,6 +4,119 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.13 — 2026-11-02
+
+### Fixed
+
+- **The whole camera picture is visible again.** The live stage used a fixed 4:3 box and an inline
+  aspect ratio that fought the flex layout, so a card sending a tall frame showed a letterboxed
+  slice of it. The stage now measures the space it actually has and draws the largest picture that
+  keeps the card's own aspect ratio — nothing is cropped, and no black bars are added beyond the
+  card's own shape.
+
+- **A sideways picture can be turned upright, and stays that way.** New **Orientation** control on
+  the capture panel: `Auto (detect)`, `0°`, `90°`, `180°`, `270°`, plus a one-click quarter-turn
+  button next to it. `Auto` turns a portrait buffer (for example 1080 × 1430) a quarter turn, which
+  is what a capture card that hands over a landscape picture on its side looks like.
+
+- **The rotation is baked into the saved picture.** The PNG is turned before it is written, so the
+  thumbnail, the report plate, the printed sheet and the Word export all show the same upright
+  image — no viewer has to know about capture hardware.
+
+- **Capture preferences survive a restart.** Orientation, resolution, black-border trim,
+  auto-caption and the last device are stored in the database instead of being reset every time the
+  application starts.
+
+### Fixed — printing
+
+- **The print copy is shown before printing.** Electron's Windows print dialog cannot render a
+  preview pane and displays *"This app doesn't support print preview"* where the page should be.
+  **Print** now opens an in-app A4 preview that renders the exact document handed to the printer,
+  with a printer picker, a copy count and a **Print** button that sends the job straight to the
+  chosen device. The system dialog is still reachable from the preview if a special job needs it.
+
+- The preview is used from the reporting console, from the **Image Plus** picture sheet and from
+  the report register, so every print path behaves the same way.
+
+### Added — fields you can type in, that remember
+
+- **The Procedure box is now free text with suggestions.** Type a name the clinic actually uses
+  (`UPPER G.I. ENDOSCOPY`, `ERCP`, `LOWER GI`), or pick one of the built-in entries. Anything saved
+  with a report is offered again next time, filtered as soon as two or three letters are typed.
+- **The Referrer box works the same way.** It suggests every name already saved on a patient plus
+  the active doctor directory, so the list builds itself and never needs maintaining.
+- Both boxes accept a brand-new value: it is saved with the record and appears in the list the next
+  time, with a clear “New name — saved for the next patient” row while it is still unknown.
+- Searching also matches the description, so typing `upp` finds *ENDOSCOPY (upper GI)* and `lower`
+  finds *COLONOSCOPY*.
+- The clinical template is worked out from the words typed — a name mentioning the colon is a
+  colonoscopy, a name mentioning the upper GI tract (or an unfamiliar name such as ERCP) is an upper
+  GI study, and a name mentioning both is a combined study — so a typed name can never silently
+  attach the wrong set of sections.
+- A typed procedure name is printed on the report band as
+  `<NAME> PROCEDURE REPORT`; a name that already ends in “REPORT” is used exactly as typed.
+
+### Added — one patient, two studies
+
+- **A “Both” button on the New Patient screen** creates two separate reports for the same person —
+  **ENDOSCOPY** and **COLONOSCOPY** — each with its own id, its own picture folder and its own
+  printout, instead of one combined report. The Procedure field shows
+  “Endoscopy + Colonoscopy (two separate reports)” while it is on, and the footer buttons become
+  *Add both reports* / *Save & open both*.
+- The same option is available from **New report** on an existing patient, so a second study can be
+  added later without re-registering anybody.
+- Opening either id captures pictures into that id's folder, which is what keeps the two studies
+  apart on the plate and in the archive.
+
+### Fixed — duplicate records
+
+- **Re-registering somebody who is already on file no longer creates a copy.** A new registration is
+  matched against the archive by phone number, or by name together with age and sex. When it
+  matches, the existing record is reused and the form's newly typed values are merged in — fields
+  that were left blank keep what was already stored. A toast says
+  “Existing patient reused — no duplicate created”.
+- **Starting a report that already exists no longer copies it.** If a draft of the same procedure,
+  for the same patient, on the same date is already open, that draft is opened instead of a second
+  one being created.
+- The patient register now refreshes its report count immediately after two reports are created, so
+  the row no longer shows “0” until the next reload.
+
+### Changed
+
+- **The band across the form now names the procedure.** It read
+  `ENDOSCOPIC PROCEDURE REPORT` for every study. It now follows what was selected:
+  `COLONOSCOPY PROCEDURE REPORT` for a colonoscopy, `ENDOSCOPY & COLONOSCOPY PROCEDURE REPORT`
+  for a combined case, and the original `ENDOSCOPIC PROCEDURE REPORT` for an upper GI endoscopy.
+  The on-screen sheet, the printed page and the Word export all read from one string, so they
+  cannot disagree.
+
+### Fixed — picture plate
+
+- **Choosing six pictures now shows all six picture boxes.** The plate worked out its shape from
+  how many pictures were *already placed* instead of the layout chosen in the dropdown. With
+  "6 pictures · 2 × 3" selected, only the top row appeared and the right-hand column stayed
+  empty — which made the layout impossible to fill, because the missing boxes are exactly where
+  the remaining pictures have to go. The shape now follows the chosen plate: 6 → three on top and
+  three on the right, 7 → three and four, 4 → a single full-height right column. Empty slots in
+  both rows are visible and clickable.
+
+- **Side pictures are now the same size as the top row.** Both use the same 211.2 × 158.4 box, so
+  a picture looks identical wherever it sits on the sheet. The column still shrinks rather than
+  pushing the report past one page when four pictures plus captions do not fit.
+
+- Printing and the Word export follow the same split, so what is arranged on screen is what
+  comes out of the printer.
+
+### Added
+
+- `src/lib/frameRotation.js` — angle normalisation, auto-detection, aspect-preserving fit and
+  canvas rotation, covered by 13 new self-test checks.
+
+- `scripts/pad-images.cjs` — tops a procedure up to a given number of pictures and sets the plate
+  layout, so the plate can be checked at the clinic's real capacity without capturing by hand.
+
+---
+
 ## 0.5.12 — 2026-11-02
 
 ### Changed

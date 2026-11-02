@@ -41,12 +41,14 @@ export const api = {
     update: guard(bridge?.patients?.save, 'patients.update'),
     remove: guard(bridge?.patients?.remove, 'patients.remove'),
     nextRegNo: guard(bridge?.patients?.nextRegNo, 'patients.nextRegNo'),
+    referrers: guard(bridge?.patients?.referrers, 'patients.referrers'),
   },
   procedures: {
     list: guard(bridge?.procedures?.list, 'procedures.list'),
     get: guard(bridge?.procedures?.get, 'procedures.get'),
     save: guard(bridge?.procedures?.save, 'procedures.save'),
     remove: guard(bridge?.procedures?.remove, 'procedures.remove'),
+    labels: guard(bridge?.procedures?.labels, 'procedures.labels'),
   },
   media: {
     list: guard(bridge?.media?.list, 'media.list'),
@@ -91,6 +93,8 @@ export const api = {
     exportDocx: guard(bridge?.report?.exportDocx, 'report.exportDocx'),
     exportBatch: guard(bridge?.report?.exportBatch, 'report.exportBatch'),
     print: guard(bridge?.report?.print, 'report.print'),
+    printers: guard(bridge?.report?.printers, 'report.printers'),
+    printSilent: guard(bridge?.report?.printSilent, 'report.printSilent'),
     savePdf: guard(bridge?.report?.savePdf, 'report.savePdf'),
   },
   ai: {

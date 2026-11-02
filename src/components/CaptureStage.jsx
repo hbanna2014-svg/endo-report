@@ -3,13 +3,40 @@
  *
  * One component, used both in the full Images tab and beside the report in the
  * live console, so the capture behaviour can never drift between the two.
+ *
+ * The picture is fitted, never cropped: the stage measures the space it has and
+ * draws the largest box that keeps the card's own aspect ratio, including after
+ * a quarter turn. That is what makes the whole camera view visible instead of a
+ * letterboxed or cut-off slice of it.
  */
 
-import React from 'react'
-import { Camera, MonitorOff, Play, RefreshCw, Square, Video, Settings2 } from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import { Camera, MonitorOff, Play, RefreshCw, Square, Video, Settings2, RotateCw } from 'lucide-react'
 
 import { CAPTURE_QUALITY, fmtDuration } from '../lib/useCapture.js'
+import { ROTATION_OPTIONS, fitWithin, rotatedSize, rotationBadge } from '../lib/frameRotation.js'
 import { Button, Chip, Field, Select } from './ui.jsx'
+
+/** Tracks the pixel size of an element so the picture can be fitted to it. */
+function useElementSize(ref) {
+  const [size, setSize] = useState({ width: 0, height: 0 })
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return undefined
+    const measure = () => setSize({ width: el.clientWidth, height: el.clientHeight })
+    measure()
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure)
+      return () => window.removeEventListener('resize', measure)
+    }
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ref])
+
+  return size
+}
 
 export default function CaptureStage({ cap, activeSection, onSelectSection, compact = false, showDevicePicker = true }) {
   const {
@@ -28,6 +55,9 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
     setTrimBlack,
     quality,
     setQuality,
+    rotation,
+    setRotation,
+    activeRotation,
     frameSize,
     sections,
     sectionLabel,
@@ -39,7 +69,36 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
     stopRecording,
   } = cap
 
+  const stageRef = useRef(null)
+  const stageSize = useElementSize(stageRef)
+
+  const hasFrame = !!(frameSize?.width && frameSize?.height)
+  const turned = rotatedSize(frameSize?.width, frameSize?.height, activeRotation)
+  // Largest box that shows the entire frame inside the space available.
+  const box = hasFrame && stageSize.width > 0 ? fitWithin(stageSize, turned.width, turned.height) : null
+
+  const swap = activeRotation % 180 !== 0
+  const videoStyle = {
+    display: live ? 'block' : 'none',
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: box ? (swap ? box.height : box.width) : '100%',
+    height: box ? (swap ? box.width : box.height) : '100%',
+    transform: `translate(-50%, -50%) rotate(${activeRotation}deg)`,
+    objectFit: 'contain',
+    objectPosition: 'center',
+  }
+
   const megapixels = frameSize ? ((frameSize.width * frameSize.height) / 1e6).toFixed(1) : null
+
+  /* A one-click quarter turn: the fastest way out of a sideways picture, and
+     the choice is remembered for the next patient. */
+  const nudgeRotation = () => {
+    const order = [0, 90, 180, 270]
+    const current = order.includes(Number(rotation)) ? Number(rotation) : activeRotation
+    setRotation(String(order[(order.indexOf(current) + 1) % order.length]))
+  }
 
   return (
     <div className={`stage-wrap${compact ? ' compact' : ''}`}>
@@ -103,17 +162,13 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
         </div>
       ) : null}
 
-      {/* The stage follows the capture card's own aspect ratio so the whole
-          frame is visible and centred, with no letterbox bars around it. */}
-      <div
-        className="capture-stage"
-        style={
-          frameSize
-            ? { aspectRatio: `${frameSize.width} / ${frameSize.height}`, maxHeight: compact ? '52vh' : '64vh' }
-            : undefined
-        }
-      >
-        <video ref={videoRef} playsInline muted style={{ display: live ? 'block' : 'none' }} />
+      {/* The stage is the measuring frame; .stage-fit inside it is the picture,
+          sized so that the entire frame is visible without cropping. */}
+      <div className="capture-stage" ref={stageRef}>
+        <div className="stage-fit" style={box ? { width: box.width, height: box.height } : { width: '100%', height: '100%' }}>
+          <video ref={videoRef} playsInline muted style={videoStyle} />
+        </div>
+
         {!live ? (
           <div className="placeholder">
             <Camera size={compact ? 24 : 30} style={{ opacity: 0.4, marginBottom: 8 }} />
@@ -130,7 +185,7 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
           <span className="capture-badge">
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e' }} />
             LIVE · {sectionLabel || 'no section selected'}
-            {frameSize ? ` · ${frameSize.width}×${frameSize.height}` : ''}
+            {frameSize ? ` · ${frameSize.width}×${frameSize.height}${rotationBadge(activeRotation)}` : ''}
           </span>
         ) : null}
 
@@ -181,6 +236,33 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
         <label className="row small" style={{ gap: 6, cursor: 'pointer' }} title="Removes the black frame some capture cards add around the picture">
           <input type="checkbox" checked={trimBlack} onChange={(e) => setTrimBlack(e.target.checked)} />
           Trim black border
+        </label>
+        {/* Orientation lives with the other capture preferences rather than in
+            the header: the console's centre column is narrow, and a fourth
+            picker there wrapped onto its own row and cost picture height. */}
+        <label className="row small" style={{ gap: 6 }} title="Turn the live picture when the capture card sends it sideways">
+          <span className="muted">Orientation</span>
+          <select
+            className="select"
+            style={{ width: 132, padding: '3px 6px', fontSize: 11.5 }}
+            value={String(rotation)}
+            onChange={(e) => setRotation(e.target.value)}
+          >
+            {ROTATION_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="btn ghost sm"
+            style={{ padding: '2px 6px' }}
+            onClick={nudgeRotation}
+            title="Turn the picture a quarter turn"
+          >
+            <RotateCw size={12} />
+          </button>
         </label>
         <span className="spacer" />
         {!showDevicePicker ? (

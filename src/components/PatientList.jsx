@@ -60,6 +60,8 @@ function StartProcedureDialog({ open, patient, doctors, onClose, onStarted }) {
   const [assistant, setAssistant] = useState('')
   const [scope, setScope] = useState('')
   const [busy, setBusy] = useState(false)
+  /* Two separate ids for one patient, instead of one combined report. */
+  const [dual, setDual] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -68,24 +70,46 @@ function StartProcedureDialog({ open, patient, doctors, onClose, onStarted }) {
     setDoctor(patient?.performingDoctor || '')
     setAssistant(patient?.assistant || '')
     setScope('')
+    setDual(false)
   }, [open, patient])
 
   const start = async () => {
     if (!patient) return
     setBusy(true)
     try {
-      const payload = {
-        ...emptyProcedure(testName),
-        procedureDate: date,
-        performingDoctor: doctor,
-        assistant,
-        scopeModel: scope,
-        indication: patient.indication || '',
-        status: 'draft',
+      const types = dual ? ['ogd', 'colonoscopy'] : [testName]
+      let first = null
+      let reused = 0
+
+      for (const type of types) {
+        // eslint-disable-next-line no-await-in-loop
+        const drafts = await api.procedures.list({ patientId: patient.id, testName: type, status: 'draft', limit: 100 })
+        const sameDay = (drafts || []).find((p) => (p.procedureDate || '') === date)
+        if (sameDay) {
+          reused += 1
+          if (!first) first = sameDay
+          continue
+        }
+        const payload = {
+          ...emptyProcedure(type),
+          procedureDate: date,
+          performingDoctor: doctor,
+          assistant,
+          scopeModel: scope,
+          indication: patient.indication || '',
+          status: 'draft',
+        }
+        // eslint-disable-next-line no-await-in-loop
+        const saved = await api.procedures.save(patient.id, payload)
+        if (!first) first = saved
       }
-      const saved = await api.procedures.save(patient.id, payload)
-      toast.push({ tone: 'ok', title: 'Report started', body: `${PROCEDURE_TYPES.find((t) => t.id === testName)?.label}` })
-      onStarted?.(saved)
+
+      toast.push({
+        tone: reused ? 'warn' : 'ok',
+        title: reused ? 'Existing draft opened — no duplicate created' : 'Report started',
+        body: types.map((t) => PROCEDURE_TYPES.find((x) => x.id === t)?.label).filter(Boolean).join(' + '),
+      })
+      onStarted?.(first)
       onClose?.()
     } catch (err) {
       toast.push({ tone: 'err', title: 'Could not start the procedure', body: err.message })
@@ -103,14 +127,19 @@ function StartProcedureDialog({ open, patient, doctors, onClose, onStarted }) {
         <>
           <Button onClick={onClose}>Cancel</Button>
           <Button variant="primary" icon={PlayCircle} onClick={start} disabled={busy}>
-            {busy ? 'Creating…' : 'Start report'}
+            {busy ? 'Creating…' : dual ? 'Start both reports' : 'Start report'}
           </Button>
         </>
       }
     >
       <div className="grid c2">
-        <Field label="Type of procedure" required>
-          <Select value={testName} onChange={(e) => setTestName(e.target.value)} options={PROCEDURE_TYPES.map((t) => ({ value: t.id, label: t.label }))} />
+        <Field label="Type of procedure" required hint={dual ? 'Overridden: two separate reports' : ''}>
+          <Select
+            value={testName}
+            onChange={(e) => setTestName(e.target.value)}
+            options={PROCEDURE_TYPES.map((t) => ({ value: t.id, label: t.label }))}
+            disabled={dual}
+          />
         </Field>
         <Field label="Date of procedure" required>
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
@@ -130,11 +159,21 @@ function StartProcedureDialog({ open, patient, doctors, onClose, onStarted }) {
           ))}
         </datalist>
       </div>
+      <div style={{ marginTop: 4 }}>
+        <label className="row small" style={{ gap: 8, cursor: 'pointer' }}>
+          <input type="checkbox" checked={dual} onChange={(e) => setDual(e.target.checked)} />
+          <span>
+            Create <strong>two separate reports</strong> — ENDOSCOPY and COLONOSCOPY — each with its own id, pictures and
+            printout
+          </span>
+        </label>
+      </div>
+
       <div className="banner info" style={{ marginTop: 14 }}>
         <ClipboardList size={17} style={{ flex: '0 0 17px', marginTop: 1 }} />
         <div className="small">
-          Choosing <strong>Both</strong> creates a single report covering upper GI endoscopy and colonoscopy together — useful
-          for a combined panendoscopy case.
+          The list's <strong>Both</strong> option makes a single report covering both studies. Tick the box above when each
+          study needs its own id — then open whichever one is being performed and its pictures stay with it.
         </div>
       </div>
     </Modal>
@@ -429,17 +468,53 @@ export default function PatientList({ doctors, onOpenProcedure, onGoToWorkspace,
         onClose={() => setFormOpen(false)}
         onStartReport={async (patient, opts) => {
           try {
-            const payload = {
-              ...emptyProcedure(opts.testName),
-              procedureDate: opts.procedureDate,
-              performingDoctor: patient.performingDoctor || '',
-              indication: patient.indication || '',
-              bed: opts.bed || 'OPD',
-              status: 'draft',
+            const types = opts.testNames?.length ? opts.testNames : [opts.testName]
+            let first = null
+            let reused = 0
+
+            for (const testName of types) {
+              // Re-opening a study that is still a draft must never make a second
+              // copy of it: the existing id is opened instead.
+              // eslint-disable-next-line no-await-in-loop
+              const drafts = await api.procedures.list({ patientId: patient.id, testName, status: 'draft', limit: 100 })
+              const sameDay = (drafts || []).find(
+                (p) => (p.procedureDate || '') === (opts.procedureDate || ''),
+              )
+              if (sameDay) {
+                reused += 1
+                if (!first) first = sameDay
+                continue
+              }
+              const payload = {
+                ...emptyProcedure(testName),
+                procedureDate: opts.procedureDate,
+                performingDoctor: patient.performingDoctor || '',
+                indication: patient.indication || '',
+                bed: opts.bed || 'OPD',
+                status: 'draft',
+                // The name the clinic typed, printed on the report band.
+                ...(opts.procedureLabels?.[types.indexOf(testName)]
+                  ? { procedureLabel: opts.procedureLabels[types.indexOf(testName)] }
+                  : {}),
+              }
+              // eslint-disable-next-line no-await-in-loop
+              const saved = await api.procedures.save(patient.id, payload)
+              if (!first) first = saved
             }
-            const saved = await api.procedures.save(patient.id, payload)
+
+            if (reused) {
+              toast.push({
+                tone: 'warn',
+                title: 'Existing draft opened — no duplicate created',
+                body: `${reused} report(s) for ${patient.name} were already open on ${opts.procedureDate}.`,
+              })
+            }
+
             onRefreshStats?.()
-            onGoToWorkspace?.(saved.id)
+            // The register was reloaded by onSaved *before* these reports
+            // existed, so refresh it again or the count stays at zero.
+            await load(search)
+            if (opts.open !== false && first) onGoToWorkspace?.(patient.id, first.id)
           } catch (err) {
             toast.push({ tone: 'err', title: 'Could not start the report', body: err.message })
           }

@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('endoreport', {
     save: (patient) => invoke('patients:save', patient),
     remove: (id) => invoke('patients:remove', id),
     nextRegNo: () => invoke('patients:nextRegNo'),
+    referrers: () => invoke('patients:referrers'),
   },
 
   procedures: {
@@ -52,6 +53,7 @@ contextBridge.exposeInMainWorld('endoreport', {
     get: (id) => invoke('procedures:get', id),
     save: (patientId, payload) => invoke('procedures:save', patientId, payload),
     remove: (id) => invoke('procedures:remove', id),
+    labels: () => invoke('procedures:labels'),
   },
 
   media: {
@@ -104,6 +106,8 @@ contextBridge.exposeInMainWorld('endoreport', {
     exportDocx: (model) => invoke('report:exportDocx', model),
     exportBatch: (models) => invoke('report:exportBatch', models),
     print: (html, title, options) => invoke('report:printHtml', html, title, options),
+    printers: () => invoke('report:printers'),
+    printSilent: (html, title, options) => invoke('report:printSilent', html, title, options),
     savePdf: (html, title) => invoke('report:savePdf', html, title),
   },
 

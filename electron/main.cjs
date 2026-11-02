@@ -130,12 +130,27 @@ function createWindow() {
       const target = process.env.ENDOREPORT_CAPTURE
       const waitMs = Number(process.env.ENDOREPORT_CAPTURE_DELAY || 2600)
       try {
+        // Let React finish its first render before interacting.
+        await new Promise((r) => setTimeout(r, Number(process.env.ENDOREPORT_CAPTURE_SETTLE || 1800)))
+
+        // Optional pre-interaction script: used by the automated check to
+        // install a synthetic camera (a canvas captureStream) so the live
+        // picture, its fitting and its rotation can be verified on a machine
+        // that has no capture card.
+        if (process.env.ENDOREPORT_EVAL) {
+          try {
+            const result = await mainWindow.webContents.executeJavaScript(process.env.ENDOREPORT_EVAL, true)
+            console.log('[CAPTURE_EVAL]', JSON.stringify(result))
+          } catch (err) {
+            console.log('[CAPTURE_EVAL_ERROR]', err.message)
+          }
+          await new Promise((r) => setTimeout(r, 700))
+        }
+
         // Optional interaction script: a JSON array of labels to click in order,
         // so the automated check can reach any screen before capturing.
         if (process.env.ENDOREPORT_CAPTURE_CLICKS) {
           const labels = JSON.parse(process.env.ENDOREPORT_CAPTURE_CLICKS)
-          // Let React finish its first render before interacting.
-          await new Promise((r) => setTimeout(r, Number(process.env.ENDOREPORT_CAPTURE_SETTLE || 1800)))
           for (const label of labels) {
             let hit = false
             for (let attempt = 0; attempt < 4 && !hit; attempt += 1) {
@@ -432,6 +447,55 @@ async function printHtml(html, title) {
       )
     }),
   )
+}
+
+/**
+ * The printers Windows offers. Used by the in-app print preview so the clinic
+ * can pick the device there instead of in the system dialog — which, in
+ * Electron, has an empty preview pane ("This app doesn't support print
+ * preview").
+ */
+async function listPrinters() {
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) return []
+    const printers = await mainWindow.webContents.getPrintersAsync()
+    return printers.map((p) => ({
+      name: p.name,
+      displayName: p.displayName || p.name,
+      description: p.description || '',
+      status: p.status,
+      isDefault: !!p.isDefault,
+    }))
+  } catch (err) {
+    console.warn('[print] could not list printers:', err.message)
+    return []
+  }
+}
+
+/**
+ * Prints straight to the chosen printer without opening the system dialog.
+ * The on-screen preview has already shown the operator exactly what will come
+ * out, so the dialog only added an empty preview pane and an extra click.
+ */
+async function printHtmlSilent(html, title, opts = {}) {
+  const deviceName = opts.deviceName || undefined
+  const copies = Math.max(1, Math.min(50, Number(opts.copies) || 1))
+  const res = await withPrintWindow(html, title, (win) =>
+    new Promise((resolve) => {
+      win.webContents.print(
+        {
+          silent: true,
+          deviceName,
+          copies,
+          printBackground: true,
+          pageSize: 'A4',
+          margins: { marginType: 'default' },
+        },
+        (success, failureReason) => resolve({ ok: success, reason: failureReason || null, deviceName: deviceName || null }),
+      )
+    }),
+  )
+  return res
 }
 
 async function savePdf(html, title) {
@@ -920,12 +984,14 @@ function registerIpc() {
   handle('patients:save', (patient) => db.savePatient(patient))
   handle('patients:remove', (id) => db.deletePatient(id))
   handle('patients:nextRegNo', () => db.nextRegNo())
+  handle('patients:referrers', () => db.listReferrers())
 
   /* Procedures ----------------------------------------------------------- */
   handle('procedures:list', (filters) => db.listProcedures(filters || {}))
   handle('procedures:get', (id) => db.getProcedure(id))
   handle('procedures:save', (patientId, payload) => db.saveProcedure(patientId, payload))
   handle('procedures:remove', (id) => db.deleteProcedure(id))
+  handle('procedures:labels', () => db.listProcedureLabels())
 
   /* Media ---------------------------------------------------------------- */
   handle('media:list', (procedureId) => db.listMedia(procedureId))
@@ -1156,6 +1222,8 @@ function registerIpc() {
   handle('report:exportDocx', (model) => exportDocx(model))
   handle('report:exportBatch', (models) => exportBatch(models))
   handle('report:printHtml', (html, title) => printHtml(html, title))
+  handle('report:printers', () => listPrinters())
+  handle('report:printSilent', (html, title, opts) => printHtmlSilent(html, title, opts))
   handle('report:savePdf', (html, title) => savePdf(html, title))
 
   /* AI ------------------------------------------------------------------- */

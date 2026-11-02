@@ -278,20 +278,35 @@ export function buildHospitalForm(model) {
    * forced a four-picture report into a shape it did not need and pushed the
    * page over its height.
    */
-  const layoutMode = filled.length <= 3 ? 'row' : filled.length === 4 ? 'column' : 'invertedL'
-  const { top, side } = (() => {
-    if (layoutMode === 'column') return { top: [], side: filled }
-    const t = filled.slice(0, Math.min(3, filled.length))
-    return { top: t, side: filled.slice(t.length) }
-  })()
+   /* The shape comes from the plate the operator chose, NOT from how many
+      pictures are already on it. Deriving it from the filled count meant that
+      picking "6 pictures" showed only the top row of boxes: the right-hand
+      column could never appear until six pictures were already placed, which is
+      impossible when the boxes are where you place them. */
+   const plateMode = plan.mode || 'flow'
+   const isFlow = plateMode === 'flow'
 
-  /* On screen the plate keeps its empty "Add picture" slots so a picture can be
-     dropped into a specific place; the print and Word paths only want the
-     pictures that actually exist, hence the two shapes. */
-  const topCount = layoutMode === 'row' ? 3 : layoutMode === 'column' ? 0 : 3
-  const sideCount = layoutMode === 'row' ? 0 : 4
-  const topSlots = plan.slots.slice(0, topCount)
-  const sideSlots = plan.slots.slice(topCount, topCount + sideCount)
+   const layoutMode = isFlow
+     ? filled.length <= 3
+       ? 'row'
+       : filled.length === 4
+         ? 'column'
+         : 'invertedL'
+     : plateMode === 'grid4'
+       ? 'column'
+       : 'invertedL'
+
+   const topCount = isFlow ? (layoutMode === 'column' ? 0 : 3) : Number(plan.top) || 0
+   const sideCount = isFlow ? (layoutMode === 'row' ? 0 : 4) : Number(plan.side) || 0
+
+   const topSlots = plan.slots.slice(0, topCount)
+   const sideSlots = plan.slots.slice(topCount, topCount + sideCount)
+
+   /* On screen the plate keeps its empty "Add picture" slots so a picture can be
+      dropped into a specific place; the print and Word paths only want the
+      pictures that actually exist, hence the two shapes. */
+   const top = topSlots.filter((s) => s.media).map((s) => ({ ...s.media, no: s.no }))
+   const side = sideSlots.filter((s) => s.media).map((s) => ({ ...s.media, no: s.no }))
   const hasCustomDoc = !!(model.reportDoc && model.reportDoc.custom)
 
   return {
@@ -302,7 +317,9 @@ export function buildHospitalForm(model) {
       phones: [clinic.phone, clinic.email].filter(Boolean).join(', '),
     },
     rows,
-    title: 'ENDOSCOPIC PROCEDURE REPORT',
+    // A name the clinic typed wins over the built-in label, so the band always
+    // matches what was entered at registration.
+    title: bandFromLabel(procedure.procedureLabel) || procedureBandTitle(procedure.testName),
     procedure: procedureLine(procedure.testName),
     indication: String(procedure.indication || patient.indication || '').trim() || 'N/A',
     medication: String(procedure.medication || procedure.sedation || '').trim() || 'N/A',
@@ -383,6 +400,33 @@ export function htmlToText(html) {
     .replace(/&gt;/g, '>')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
+}
+
+/**
+ * The band printed across the hospital form. It names the procedure that was
+ * actually selected, in capitals, so a colonoscopy sheet and an upper GI sheet
+ * can never be mixed up in a patient's file.
+ */
+export const PROCEDURE_BAND_TITLES = {
+  ogd: 'ENDOSCOPIC PROCEDURE REPORT',
+  colonoscopy: 'COLONOSCOPY PROCEDURE REPORT',
+  both: 'ENDOSCOPY & COLONOSCOPY PROCEDURE REPORT',
+}
+
+export function procedureBandTitle(testName) {
+  return PROCEDURE_BAND_TITLES[testName] || PROCEDURE_BAND_TITLES.ogd
+}
+
+/**
+ * Turns a name the clinic typed into the band across the form.
+ * "COLONOSCOPY" becomes "COLONOSCOPY PROCEDURE REPORT", and a name that already
+ * says REPORT is left exactly as it was typed.
+ */
+export function bandFromLabel(label) {
+  const text = String(label || '').trim()
+  if (!text) return null
+  const upper = text.toUpperCase()
+  return /REPORT\s*$/.test(upper) ? upper : `${upper} PROCEDURE REPORT`
 }
 
 export function reportTitles(testName) {

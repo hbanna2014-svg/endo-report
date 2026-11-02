@@ -11,7 +11,7 @@ import path from 'node:path'
 import { analyse, emptyProcedure, findingsForSection } from '../src/lib/autoReport.js'
 import { buildImagePlan, buildReportModel, imageLayoutDef, renderPlainText, DEFAULT_TEMPLATE, buildHospitalForm } from '../src/lib/reportModel.js'
 import { buildPrintHtml, buildImagePlusHtml } from '../src/lib/printHtml.js'
-import { sectionsForProcedure } from '../src/lib/anatomy.js'
+import { sectionsForProcedure, procedureTypeFromLabel } from '../src/lib/anatomy.js'
 import { buildConstraintStages, describeMediaError } from '../src/lib/captureConstraints.js'
 
 const require = createRequire(import.meta.url)
@@ -189,6 +189,18 @@ check(
   templateErrors.length === 0,
   templateErrors.slice(0, 6).join('\n        '),
 )
+
+/* A procedure name is typed by the clinic, so the clinical template has to be
+   worked out from the words themselves. */
+check('typed name "UPPER G.I. ENDOSCOPY" is an upper GI study', procedureTypeFromLabel('UPPER G.I. ENDOSCOPY') === 'ogd')
+check('typed name "COLONOSCOPY" is a colonoscopy', procedureTypeFromLabel('COLONOSCOPY') === 'colonoscopy')
+check('typed name "LOWER GI ENDOSCOPY" is a colonoscopy', procedureTypeFromLabel('LOWER GI ENDOSCOPY') === 'colonoscopy')
+check(
+  'typed name "ENDOSCOPY + COLONOSCOPY" is a combined study',
+  procedureTypeFromLabel('ENDOSCOPY + COLONOSCOPY') === 'both',
+)
+check('an unfamiliar name falls back to upper GI', procedureTypeFromLabel('ERCP') === 'ogd')
+check('an empty name falls back to upper GI', procedureTypeFromLabel('') === 'ogd')
 
 const totalFindings = [...ogdSections, ...colonSections].reduce((a, s) => a + findingsForSection(s.id).length, 0)
 console.log(`  Total findings in the catalogue: ${totalFindings}`)
@@ -468,12 +480,16 @@ const fourModel = buildReportModel(
   hospitalTemplate,
 )
 const fourHtml = buildPrintHtml(fourModel)
+/* The plate shape must come from the layout the operator chose, never from how
+   many pictures happen to be filled. Deriving it from the count is what hid the
+   right-hand column entirely: the boxes you need to drop a picture into did not
+   exist until the pictures were already there. */
 check(
-  'four pictures use the "I" column with no top row',
-  fourModel.hospital.layoutMode === 'column' &&
-    fourModel.hospital.topSlots.length === 0 &&
+  'four pictures on a seven-slot plate keep the chosen 3 + 4 shape',
+  fourModel.hospital.layoutMode === 'invertedL' &&
+    fourModel.hospital.topSlots.length === 3 &&
     fourModel.hospital.sideSlots.length === 4 &&
-    !fourHtml.includes('class="top3"') &&
+    fourHtml.includes('class="top3"') &&
     fourHtml.includes('class="side4"'),
 )
 
@@ -484,10 +500,68 @@ const twoModel = buildReportModel(
 )
 const twoHtml = buildPrintHtml(twoModel)
 check(
-  'two pictures use a single row across the top',
-  twoModel.hospital.layoutMode === 'row' &&
-    twoHtml.includes('class="top3"') &&
-    !twoHtml.includes('class="side4"'),
+  'two pictures on a seven-slot plate still show all seven boxes',
+  twoModel.hospital.layoutMode === 'invertedL' &&
+    twoModel.hospital.topSlots.length === 3 &&
+    twoModel.hospital.sideSlots.length === 4,
+  `top=${twoModel.hospital.topSlots.length} side=${twoModel.hospital.sideSlots.length}`,
+)
+// The empty boxes exist on screen so a picture can be dropped into them; the
+// printed sheet only prints pictures that are actually there.
+check('the printout does not print empty picture boxes', !twoHtml.includes('class="side4"'))
+
+const sixPlate = buildReportModel(
+  hospitalPatient,
+  { ...hospitalProcedure, imageLayout: 'grid6', reportImages: ['hm1', 'hm2'] },
+  hospitalTemplate,
+)
+check(
+  'choosing the six-picture plate shows 3 boxes on top and 3 on the right',
+  sixPlate.imagePlan.mode === 'grid6' &&
+    sixPlate.hospital.topSlots.length === 3 &&
+    sixPlate.hospital.sideSlots.length === 3,
+  `mode=${sixPlate.imagePlan.mode} top=${sixPlate.hospital.topSlots.length} side=${sixPlate.hospital.sideSlots.length}`,
+)
+
+const fourPlate = buildReportModel(
+  hospitalPatient,
+  { ...hospitalProcedure, imageLayout: 'grid4', reportImages: ['hm1', 'hm2'] },
+  hospitalTemplate,
+)
+check(
+  'choosing the four-picture plate shows a single full-height column',
+  fourPlate.hospital.layoutMode === 'column' &&
+    fourPlate.hospital.topSlots.length === 0 &&
+    fourPlate.hospital.sideSlots.length === 4,
+)
+
+/* The band across the form has to name the procedure that was selected, or two
+   different studies look identical in the patient's file. */
+const bandFor = (testName) =>
+  buildReportModel(hospitalPatient, { ...hospitalProcedure, testName }, hospitalTemplate).hospital.title
+
+check('band title for colonoscopy', bandFor('colonoscopy') === 'COLONOSCOPY PROCEDURE REPORT', bandFor('colonoscopy'))
+check('band title for upper GI endoscopy', bandFor('ogd') === 'ENDOSCOPIC PROCEDURE REPORT', bandFor('ogd'))
+check(
+  'band title for a combined procedure names both',
+  /ENDOSCOPY/.test(bandFor('both')) && /COLONOSCOPY/.test(bandFor('both')),
+  bandFor('both'),
+)
+check('band title falls back safely for an unknown type', bandFor('sigmoidoscopy') === 'ENDOSCOPIC PROCEDURE REPORT')
+
+/* A name typed at registration must reach the band, completed the same way as
+   the built-in titles. */
+const typedBand = (label) =>
+  buildReportModel(hospitalPatient, { ...hospitalProcedure, procedureLabel: label }, hospitalTemplate).hospital.title
+check('typed "UPPER G.I. ENDOSCOPY" becomes a full band', typedBand('UPPER G.I. ENDOSCOPY') === 'UPPER G.I. ENDOSCOPY PROCEDURE REPORT', typedBand('UPPER G.I. ENDOSCOPY'))
+check('typed "COLONOSCOPY" becomes a full band', typedBand('colonoscopy') === 'COLONOSCOPY PROCEDURE REPORT')
+check('a name already ending in REPORT is left alone', typedBand('ERCP REPORT') === 'ERCP REPORT')
+check('an empty label falls back to the built-in band', typedBand('') === 'ENDOSCOPIC PROCEDURE REPORT')
+check(
+  'the printed band uses the same title as the screen',
+  buildPrintHtml(buildReportModel(hospitalPatient, { ...hospitalProcedure, testName: 'colonoscopy' }, hospitalTemplate)).includes(
+    'COLONOSCOPY PROCEDURE REPORT',
+  ),
 )
 
 const docModel = buildReportModel(
@@ -561,6 +635,39 @@ const constrainedErr = describeMediaError(Object.assign(new Error('x'), { name: 
 console.log(`  NotReadableError -> ${busyErr.slice(0, 60)}…`)
 check('NotReadableError explains that another program holds the card', /another program/i.test(busyErr))
 check('OverconstrainedError points at PAL 720×576', /PAL/.test(constrainedErr))
+
+/* ========================================================================== */
+console.log('\n=== 8. Capture rotation and fit ===\n')
+
+const { effectiveRotation, rotatedSize, fitWithin, normaliseAngle } = await import('../src/lib/frameRotation.js')
+
+// The real symptom from the field: a card that reports 1080 × 1430 hands over a
+// landscape picture turned on its side.
+check('auto turns a portrait buffer a quarter turn', effectiveRotation({ width: 1080, height: 1430 }, 'auto') === 90)
+check('auto leaves a landscape buffer alone', effectiveRotation({ width: 1920, height: 1080 }, 'auto') === 0)
+check('auto tolerates a nearly square buffer', effectiveRotation({ width: 1080, height: 1090 }, 'auto') === 0)
+check('auto without a frame size does nothing', effectiveRotation(null, 'auto') === 0)
+check('a manual 180° is obeyed', effectiveRotation({ width: 1920, height: 1080 }, 180) === 180)
+check('a manual 90° overrides auto', effectiveRotation({ width: 1920, height: 1080 }, '90') === 90)
+check('angles snap and wrap', normaliseAngle(450) === 90 && normaliseAngle(-90) === 270)
+
+const turned = rotatedSize(1080, 1430, 90)
+check('a quarter turn swaps width and height', turned.width === 1430 && turned.height === 1080, JSON.stringify(turned))
+const upright = rotatedSize(1080, 1430, 0)
+check('0° keeps the size', upright.width === 1080 && upright.height === 1430)
+
+const fitted = fitWithin({ width: 800, height: 600 }, 1430, 1080)
+check('the whole frame fits inside the stage', fitted.width <= 800 && fitted.height <= 600, JSON.stringify(fitted))
+check('the fitted box keeps the aspect ratio', Math.abs(fitted.width / fitted.height - 1430 / 1080) < 0.02, JSON.stringify(fitted))
+check('one dimension uses the full space', fitted.width === 800 || fitted.height === 600)
+check('an empty stage produces no box', fitWithin({ width: 0, height: 0 }, 100, 100).width === 0)
+
+const tall = fitWithin({ width: 400, height: 900 }, 1080, 1430)
+check(
+  'a portrait frame in a tall stage is fitted, never cropped',
+  tall.width === 400 && tall.height <= 900 && Math.abs(tall.width / tall.height - 1080 / 1430) < 0.02,
+  JSON.stringify(tall),
+)
 
 /* ========================================================================== */
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}\n`)

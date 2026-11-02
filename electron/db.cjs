@@ -405,10 +405,78 @@ const PATIENT_COLUMNS = [
   ['notes', 'notes'],
 ]
 
+/**
+ * Looks for a patient that is clearly the same person, so re-registering
+ * someone who is already in the archive updates their record instead of
+ * creating a second copy of it.
+ *
+ * A phone number is the strongest signal; without one, the same name with the
+ * same age and sex is treated as the same person. Age is only used when it was
+ * actually entered, so a half-filled form can never match everyone.
+ */
+async function findExistingPatient(input) {
+  const name = String(input.name || '').trim()
+  if (!name) return null
+
+  const phone = String(input.phone || '').replace(/[^0-9]/g, '')
+  if (phone.length >= 6) {
+    const byPhone = await q(
+      `SELECT * FROM patients
+       WHERE regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1
+       ORDER BY updated_at DESC LIMIT 1`,
+      [phone],
+    )
+    if (byPhone.length) return { row: byPhone[0], reason: 'phone' }
+  }
+
+  const age = String(input.age || '').trim()
+  const sex = String(input.sex || '').trim()
+  if (age && sex) {
+    const byIdentity = await q(
+      `SELECT * FROM patients
+       WHERE lower(trim(name)) = lower(trim($1))
+         AND COALESCE(age, '') = $2
+         AND COALESCE(sex, '') = $3
+       ORDER BY updated_at DESC LIMIT 1`,
+      [name, age, sex],
+    )
+    if (byIdentity.length) return { row: byIdentity[0], reason: 'name-age-sex' }
+  }
+  return null
+}
+
 async function savePatient(input) {
-  const id = input.id || newId()
-  const regNo = input.regNo && String(input.regNo).trim() ? String(input.regNo).trim() : await nextRegNo()
+  let id = input.id || newId()
+  let regNo = input.regNo && String(input.regNo).trim() ? String(input.regNo).trim() : await nextRegNo()
   const existing = await q(`SELECT id FROM patients WHERE id = $1`, [id])
+
+  /* A brand-new registration that matches somebody already on file is not a new
+     patient — it is the same person being entered twice. Reuse the existing
+     record and merge in only the values that were actually typed, so nothing
+     already stored can be blanked out. */
+  let matchedExisting = false
+  if (!input.id) {
+    const match = await findExistingPatient(input)
+    if (match) {
+      matchedExisting = true
+      id = match.row.id
+      regNo = match.row.reg_no || regNo
+      const merged = {}
+      for (const [col, key] of PATIENT_COLUMNS) {
+        merged[key] = input[key] !== undefined && input[key] !== null && String(input[key]).trim() !== ''
+          ? input[key]
+          : match.row[col]
+      }
+      const sets = PATIENT_COLUMNS.map(([c], i) => `${c} = $${i + 2}`).join(', ')
+      await q(`UPDATE patients SET ${sets}, updated_at = now() WHERE id = $1`, [
+        id,
+        ...PATIENT_COLUMNS.map(([, key]) => merged[key]),
+      ])
+      const saved = await getPatient(id)
+      return { ...saved, matchedExisting: true, matchedBy: match.reason }
+    }
+  }
+
   if (existing.length) {
     const sets = PATIENT_COLUMNS.map(([col], i) => `${col} = $${i + 2}`).join(', ')
     await q(
@@ -446,6 +514,45 @@ async function listPatients(search = '', limit = 500) {
     [term, limit],
   )
   return rows.map((r) => ({ ...rowToPatient(r), procedureCount: r.procedure_count, lastProcedure: r.last_procedure }))
+}
+
+/**
+ * Every referrer name that has ever been saved on a patient, plus the active
+ * doctor directory. This is what makes the Referrer box suggest names the
+ * clinic actually uses, without anybody maintaining a list.
+ */
+async function listReferrers() {
+  const rows = await q(
+    `SELECT DISTINCT trim(referred_by) AS v
+     FROM patients
+     WHERE COALESCE(trim(referred_by), '') <> ''
+     ORDER BY v ASC`,
+  )
+  const fromPatients = rows.map((r) => r.v)
+  const fromDoctors = (await listDoctors(true)).map((d) => d.name).filter(Boolean)
+  return [...new Set([...fromPatients, ...fromDoctors])].sort((a, b) => a.localeCompare(b))
+}
+
+/** Procedure names typed into the Procedure box and saved with a report. */
+async function listProcedureLabels() {
+  const rows = await q(
+    `SELECT DISTINCT trim(payload->>'procedureLabel') AS v
+     FROM procedures
+     WHERE COALESCE(trim(payload->>'procedureLabel'), '') <> ''
+     ORDER BY v ASC`,
+  )
+  const saved = await getSetting('procedureLabels', [])
+  const all = [...rows.map((r) => r.v), ...(Array.isArray(saved) ? saved : [])]
+  return [...new Set(all.filter(Boolean))].sort((a, b) => a.localeCompare(b))
+}
+
+async function rememberProcedureLabel(label) {
+  const text = String(label || '').trim()
+  if (!text) return
+  const saved = await getSetting('procedureLabels', [])
+  const list = Array.isArray(saved) ? saved : []
+  if (list.some((v) => String(v).toLowerCase() === text.toLowerCase())) return
+  await setSetting('procedureLabels', [...list, text].slice(-200))
 }
 
 async function deletePatient(id) {
@@ -526,6 +633,8 @@ async function saveProcedure(patientId, payload) {
     )
   }
   await q(`UPDATE patients SET updated_at = now() WHERE id = $1`, [patientId])
+  // A procedure name typed by the clinic is remembered for the next patient.
+  if (payload.procedureLabel) await rememberProcedureLabel(payload.procedureLabel)
   return getProcedure(id)
 }
 
@@ -916,6 +1025,9 @@ module.exports = {
   savePatient,
   getPatient,
   listPatients,
+  listReferrers,
+  listProcedureLabels,
+  rememberProcedureLabel,
   deletePatient,
   saveProcedure,
   getProcedure,

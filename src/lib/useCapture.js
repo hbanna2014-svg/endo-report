@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api } from './api.js'
 import { buildConstraintStages, describeMediaError } from './captureConstraints.js'
+import { effectiveRotation, rotateCanvas } from './frameRotation.js'
 import { sectionsForProcedure } from './anatomy.js'
 import { useToast } from '../components/ui.jsx'
 
@@ -151,6 +152,10 @@ export default function useCapture({
   const [autoCaption, setAutoCaption] = useState(true)
   const [trimBlack, setTrimBlack] = useState(true)
   const [quality, setQuality] = useState('max')
+  // 'auto' | 0 | 90 | 180 | 270 — a capture card that hands over a portrait
+  // buffer makes the picture look sideways; this turns it back.
+  const [rotation, setRotation] = useState('auto')
+  const [prefsLoaded, setPrefsLoaded] = useState(false)
   const [lastCaptured, setLastCaptured] = useState(null)
   const [frameSize, setFrameSize] = useState(null)
 
@@ -159,6 +164,37 @@ export default function useCapture({
     const s = sections.find((x) => x.id === activeSection)
     return s ? s.label : ''
   }, [sections, activeSection])
+
+  /** The angle actually used right now, after "auto" has been resolved. */
+  const activeRotation = useMemo(() => effectiveRotation(frameSize, rotation), [frameSize, rotation])
+
+  /* Capture preferences survive a restart: an operator should not have to set
+     the orientation and the black-border trim again every morning. */
+  useEffect(() => {
+    let alive = true
+    api.settings
+      .get('capture', null)
+      .then((saved) => {
+        if (!alive) return
+        if (saved) {
+          if (saved.rotation !== undefined) setRotation(saved.rotation)
+          if (saved.quality) setQuality(saved.quality)
+          if (typeof saved.trimBlack === 'boolean') setTrimBlack(saved.trimBlack)
+          if (typeof saved.autoCaption === 'boolean') setAutoCaption(saved.autoCaption)
+          if (saved.deviceId) setDeviceId((cur) => cur || saved.deviceId)
+        }
+        setPrefsLoaded(true)
+      })
+      .catch(() => setPrefsLoaded(true))
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!prefsLoaded) return
+    api.settings.set('capture', { rotation, quality, trimBlack, autoCaption, deviceId }).catch(() => {})
+  }, [prefsLoaded, rotation, quality, trimBlack, autoCaption, deviceId])
 
   const refreshDevices = useCallback(async () => {
     try {
@@ -339,9 +375,14 @@ export default function useCapture({
       ctx.imageSmoothingQuality = 'high'
       ctx.drawImage(video, 0, 0, w, h)
 
+      // Turn the picture upright *before* trimming, so the saved PNG is already
+      // in the orientation the endoscopist saw on screen.
+      const angle = effectiveRotation({ width: w, height: h }, rotation)
+      const upright = angle ? rotateCanvas(canvas, angle) : canvas
+
       // Drop the black frame the capture card adds, so the printed picture is
       // the endoscopic image itself and not a letterboxed copy of it.
-      const trimmed = trimBlack ? trimDarkBorder(canvas) : { canvas, cropped: false }
+      const trimmed = trimBlack ? trimDarkBorder(upright) : { canvas: upright, cropped: false }
       const frame = trimmed.canvas
       const fw = frame.width
       const fh = frame.height
@@ -365,13 +406,17 @@ export default function useCapture({
           mime: 'image/png',
         })
         setMedia([...mediaRef.current, rec])
+        // Deliberately not overwriting frameSize here: it describes the live
+        // card mode, and the preview must not change shape after a capture.
         setLastCaptured({ ...rec, width: fw, height: fh })
-        setFrameSize({ width: fw, height: fh })
+        const notes = []
+        if (angle) notes.push(`Rotated ${angle}°`)
+        if (trimmed.cropped) notes.push(`black border trimmed (was ${w} × ${h})`)
         toast.push({
           tone: 'ok',
           title: `Image captured · ${fw} × ${fh}`,
-          body: trimmed.cropped
-            ? `Black border trimmed (was ${w} × ${h}).`
+          body: notes.length
+            ? `${notes.join(', ')}.`
             : autoCaption
               ? caption
               : 'Caption it from the picture rail.',
@@ -385,7 +430,7 @@ export default function useCapture({
         setBusy(false)
       }
     },
-    [activeSection, autoCaption, live, onCaptured, patientId, procedureId, sectionLabel, setMedia, toast, trimBlack],
+    [activeSection, autoCaption, live, onCaptured, patientId, procedureId, rotation, sectionLabel, setMedia, toast, trimBlack],
   )
 
   /* ------------------------------------------------------------- recording --- */
@@ -472,6 +517,9 @@ export default function useCapture({
     setTrimBlack,
     quality,
     setQuality,
+    rotation,
+    setRotation,
+    activeRotation,
     lastCaptured,
     frameSize,
     sections,

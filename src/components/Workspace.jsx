@@ -50,6 +50,7 @@ import CaptureStage from './CaptureStage.jsx'
 import ReportView, { AutoSummary } from './ReportView.jsx'
 import { PicturePicker, PlateControls } from './ReportPlate.jsx'
 import ImagePlus from './ImagePlus.jsx'
+import PrintPreview from './PrintPreview.jsx'
 import { MediaThumb } from './CapturePanel.jsx'
 import {
   Banner,
@@ -103,6 +104,9 @@ export default function Workspace({
   const [sealUrl, setSealUrl] = useState('')
   const [picturePrint, setPicturePrint] = useState(null) // 4 | 6 | null
   const [confirmFinal, setConfirmFinal] = useState(false)
+  // { html, title } — the exact document handed to the printer, shown in the
+  // in-app preview first because Electron's dialog has no preview pane.
+  const [printJob, setPrintJob] = useState(null)
   const [aiOpen, setAiOpen] = useState(false)
   const [aiBusy, setAiBusy] = useState(false)
   const [aiResult, setAiResult] = useState(null)
@@ -633,6 +637,12 @@ export default function Workspace({
     ]
   }, [media, model, toast])
 
+  /**
+   * "Print" now opens the in-app preview instead of jumping straight to the
+   * Windows dialog. The dialog is what shows "This app doesn't support print
+   * preview"; previewing the same document here means the operator always sees
+   * the sheet before paper is used.
+   */
   const doPrint = useCallback(async () => {
     if (!model) return
     setBusy(true)
@@ -640,10 +650,9 @@ export default function Workspace({
       await save({ silent: true, changes: {} })
       const enriched = await withImages()
       const html = buildPrintHtml({ ...model, media: enriched })
-      const res = await api.report.print(html, `${model.reportNo} — ${model.patientLine.name}`)
-      if (res?.ok === false && res.reason) toast.push({ tone: 'warn', title: 'Printing cancelled', body: res.reason })
+      setPrintJob({ html, title: `${model.reportNo} — ${model.patientLine.name}` })
     } catch (err) {
-      toast.push({ tone: 'err', title: 'Printing failed', body: err.message })
+      toast.push({ tone: 'err', title: 'Could not prepare the report', body: err.message })
     } finally {
       setBusy(false)
     }
@@ -677,9 +686,8 @@ export default function Workspace({
       try {
         const enriched = await withImages()
         const html = buildImagePlusHtml({ ...model, media: enriched }, { count, images: enriched })
-        const res = await api.report.print(html, `Image Plus — ${model.patientLine.name}`)
-        if (res?.ok === false && res.reason) toast.push({ tone: 'warn', title: 'Printing cancelled', body: res.reason })
-        else setPicturePrint(null)
+        setPicturePrint(null)
+        setPrintJob({ html, title: `Image Plus — ${model.patientLine.name}` })
       } catch (err) {
         toast.push({ tone: 'err', title: 'Printing failed', body: err.message })
       } finally {
@@ -1361,6 +1369,17 @@ export default function Workspace({
         tone="success"
         onConfirm={finalise}
         onCancel={() => setConfirmFinal(false)}
+      />
+
+      <PrintPreview
+        open={!!printJob}
+        html={printJob?.html}
+        title={printJob?.title}
+        onClose={() => setPrintJob(null)}
+        onSavePdf={() => {
+          setPrintJob(null)
+          doPdf()
+        }}
       />
 
       <AiReviewDialog

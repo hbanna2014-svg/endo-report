@@ -211,6 +211,9 @@ a { color: var(--brand); }
 .input, .select, .textarea {
   width: 100%; padding: 8px 10px; border-radius: 8px;
   border: 1px solid var(--line-2); background: var(--surface); outline: none;
+  /* Explicit, because these controls sit inside dark panels (the capture stage)
+     whose label colour would otherwise be inherited and become invisible. */
+  color: var(--ink);
   transition: border-color .12s, box-shadow .12s;
 }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(37,99,235,.14); }
@@ -554,6 +557,11 @@ a { color: var(--brand); }
   display: grid; place-items: center; border: 1px solid #1e293b;
 }
 .capture-stage video { width: 100%; height: 100%; object-fit: contain; object-position: center; background: transparent; display: block; }
+
+/* The measured picture box. Its width/height are set inline by CaptureStage so
+   the whole camera frame fits the available space — never cropped, never given
+   black bars beyond the card's own aspect ratio. */
+.stage-fit { position: relative; flex: 0 0 auto; overflow: hidden; }
 .capture-stage .placeholder { text-align: center; color: #64748b; font-size: 13px; padding: 24px; line-height: 1.5; }
 
 .capture-badge {
@@ -997,7 +1005,12 @@ a { color: var(--brand); }
   justify-content: flex-start;
 }
 .hf-side { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
-.hf-side .hf-imgwrap { flex: 1 1 auto; width: 100%; height: auto; min-height: 0; }
+/* Same 211.2 × 158.4 box as the top row, so a picture looks identical wherever
+   it sits on the plate. It still shrinks (never overflows the page) when four
+   of them plus the caption lines do not fit the column. */
+.hf-side .hf-imgwrap {
+  flex: 1 1 auto; width: 100%; height: auto; min-height: 0; max-height: 158.4px;
+}
 .hf-side img {
   width: 100%; height: 100%;
   object-fit: cover; object-position: center;
@@ -1346,3 +1359,51 @@ a { color: var(--brand); }
   border-radius: 14px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, .05);
 }
+
+/* ------------------------------------------------------------ print preview --- */
+/* The in-app preview replaces Electron's empty preview pane in the Windows
+   print dialog, so the operator sees the page before a sheet is wasted. */
+.print-preview { height: 90vh; max-height: 90vh; }
+.print-preview .modal-body { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.print-preview-bar {
+  flex: 0 0 auto; display: flex; gap: 14px; align-items: end; flex-wrap: wrap;
+  padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--surface-2);
+}
+.print-preview-bar > .field { min-width: 240px; }
+.print-preview-canvas {
+  flex: 1 1 auto; min-height: 320px; overflow: auto; padding: 16px;
+  display: flex; justify-content: center; align-items: flex-start;
+  background: repeating-linear-gradient(45deg, #e8edf4, #e8edf4 10px, #e2e8f0 10px, #e2e8f0 20px);
+}
+.print-preview-frame {
+  width: 820px; max-width: 100%; height: 100%; min-height: 320px;
+  border: 1px solid #cbd5e1; border-radius: 4px; background: #fff;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .18);
+}
+
+/* --------------------------------------------------------------- autocomplete --- */
+.ac { position: relative; flex: 1; min-width: 0; }
+.ac-field { position: relative; display: flex; align-items: center; }
+.ac-field .input { padding-right: 30px; }
+.ac-toggle {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 22px; height: 22px; display: grid; place-items: center;
+  border: 0; background: none; color: var(--ink-4); cursor: pointer; border-radius: 5px;
+}
+.ac-toggle:hover { background: var(--surface-3); color: var(--ink-2); }
+.ac-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 40;
+  background: #fff; border: 1px solid var(--line-2); border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, .16);
+  max-height: 220px; overflow: auto; padding: 4px;
+}
+.ac-menu button {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 7px 9px; border: 0; background: none; border-radius: 6px;
+  font-size: 12.5px; cursor: pointer; color: var(--ink);
+}
+.ac-menu button:hover, .ac-menu button.on { background: var(--brand-soft); }
+.ac-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-hint { font-size: 10.5px; color: var(--ink-4); white-space: nowrap; }
+.ac-custom { border-top: 1px dashed var(--line) !important; margin-top: 3px; padding-top: 7px !important; }
+.ac-custom .ac-label { color: var(--brand-dark); font-weight: 600; }

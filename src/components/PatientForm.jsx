@@ -13,9 +13,10 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { Camera, ChevronDown, Plus, Save, X } from 'lucide-react'
+import { Camera, Check, ChevronDown, Plus, Save, X } from 'lucide-react'
 import { api } from '../lib/api.js'
-import { PROCEDURE_TYPES } from '../lib/anatomy.js'
+import { procedureTypeFromLabel } from '../lib/anatomy.js'
+import Autocomplete from './Autocomplete.jsx'
 import { Banner, Button, Input, Modal, Select, Textarea, useToast } from './ui.jsx'
 
 const AGE_UNITS = ['years', 'months', 'days']
@@ -105,6 +106,15 @@ export default function PatientForm({ open, patient, doctors = [], onClose, onSa
   const [visitDate, setVisitDate] = useState(today())
   const [bed, setBed] = useState('OPD')
   const [more, setMore] = useState(false)
+  /* One patient, two studies. When this is on, saving creates two separate
+     procedure records — ENDOSCOPY and COLONOSCOPY — each with its own id and
+     its own picture folder, instead of one combined report. */
+  const [dual, setDual] = useState(false)
+  /* The procedure name is free text: it is remembered once saved and offered
+     again next time. The clinical template is derived from it. */
+  const [procedureLabel, setProcedureLabel] = useState('ENDOSCOPY')
+  const [savedProcedureLabels, setSavedProcedureLabels] = useState([])
+  const [referrerOptions, setReferrerOptions] = useState([])
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
 
@@ -114,14 +124,17 @@ export default function PatientForm({ open, patient, doctors = [], onClose, onSa
       setForm({ ...EMPTY_PATIENT, ...patient })
       setSuggestedReg(patient.regNo || '')
       setMore(false)
+      setDual(false)
     } else {
       const preferred =
         doctors.find((d) => d.isDefault && d.active !== false) || doctors.find((d) => d.active !== false)
       setForm({ ...EMPTY_PATIENT, performingDoctor: preferred?.name || '' })
       setTestName('ogd')
+      setProcedureLabel('ENDOSCOPY')
       setVisitDate(today())
       setBed('OPD')
       setMore(false)
+      setDual(false)
       api.patients
         .nextRegNo()
         .then((r) => setSuggestedReg(r))
@@ -131,6 +144,23 @@ export default function PatientForm({ open, patient, doctors = [], onClose, onSa
 
   const names = useMemo(() => doctors.filter((d) => d.active !== false).map((d) => d.name), [doctors])
 
+  /* Everything the two boxes suggest comes from the clinic's own saved data, so
+     the lists fill themselves as records are entered. */
+  useEffect(() => {
+    if (!open) return undefined
+    let alive = true
+    Promise.all([api.patients.referrers().catch(() => []), api.procedures.labels().catch(() => [])]).then(
+      ([refs, labels]) => {
+        if (!alive) return
+        setReferrerOptions(refs || [])
+        setSavedProcedureLabels(labels || [])
+      },
+    )
+    return () => {
+      alive = false
+    }
+  }, [open])
+
   const persist = async () => {
     if (!form.name.trim()) {
       toast.push({ tone: 'warn', title: 'Patient name is required' })
@@ -139,17 +169,37 @@ export default function PatientForm({ open, patient, doctors = [], onClose, onSa
     return api.patients.save({ ...form, regNo: form.regNo || suggestedReg })
   }
 
+  /** Which report ids this save should create, and what each one prints. */
+  const procedureTypes = dual ? ['ogd', 'colonoscopy'] : [testName]
+  const procedureLabels = dual ? ['ENDOSCOPY', 'COLONOSCOPY'] : [(procedureLabel || '').trim() || 'ENDOSCOPY']
+
   const save = async () => {
     setSaving(true)
     try {
       const saved = await persist()
       if (!saved) return
       toast.push({
-        tone: 'ok',
-        title: patient ? 'Patient updated' : 'Patient registered',
-        body: `${saved.name} · ${saved.regNo}`,
+        tone: saved.matchedExisting ? 'warn' : 'ok',
+        title: saved.matchedExisting
+          ? 'Existing patient reused — no duplicate created'
+          : patient
+            ? 'Patient updated'
+            : 'Patient registered',
+        body: saved.matchedExisting
+          ? `${saved.name} · ${saved.regNo} was already on file; that record was opened instead.`
+          : `${saved.name} · ${saved.regNo}`,
       })
       onSaved?.(saved)
+      // With "both" selected the two report ids are created immediately, even
+      // when the operator stays on this screen.
+      if (dual)
+        onStartReport?.(saved, {
+          testNames: procedureTypes,
+          procedureLabels,
+          procedureDate: visitDate,
+          bed,
+          open: false,
+        })
       onClose?.()
     } catch (err) {
       toast.push({ tone: 'err', title: 'Could not save the patient', body: err.message })
@@ -166,7 +216,14 @@ export default function PatientForm({ open, patient, doctors = [], onClose, onSa
       if (!saved) return
       onSaved?.(saved)
       onClose?.()
-      onStartReport?.(saved, { testName, procedureDate: visitDate, bed })
+      onStartReport?.(saved, {
+        testNames: procedureTypes,
+        procedureLabels,
+        testName,
+        procedureDate: visitDate,
+        bed,
+        open: true,
+      })
     } catch (err) {
       toast.push({ tone: 'err', title: 'Could not start the procedure', body: err.message })
     } finally {
@@ -187,10 +244,10 @@ export default function PatientForm({ open, patient, doctors = [], onClose, onSa
           <Button onClick={onClose}>Close</Button>
           <span style={{ flex: 1 }} />
           <Button icon={Camera} onClick={saveAndCapture} disabled={busy}>
-            Save &amp; open capture
+            {dual ? 'Save & open both' : 'Save & open capture'}
           </Button>
           <Button variant="success" icon={Save} onClick={save} disabled={busy}>
-            {busy ? 'Saving…' : 'Add'}
+            {busy ? 'Saving…' : dual ? 'Add both reports' : 'Add'}
           </Button>
         </>
       }
@@ -238,27 +295,69 @@ export default function PatientForm({ open, patient, doctors = [], onClose, onSa
         </div>
 
         <Row label="Procedure">
-          <Select
-            value={testName}
-            onChange={(e) => setTestName(e.target.value)}
-            options={PROCEDURE_TYPES.map((t) => ({ value: t.id, label: t.label }))}
-          />
-          <button
-            type="button"
-            className="np-x"
-            title="Clear"
-            onClick={() => setTestName('')}
-          >
-            <X size={13} />
-          </button>
+          <div style={{ flex: 1, display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
+            <Autocomplete
+              value={dual ? 'ENDOSCOPY + COLONOSCOPY (two reports)' : procedureLabel}
+              onChange={(text, option) => {
+                if (dual) return
+                setProcedureLabel(text)
+                const known = option && !String(option.value).startsWith('custom:') ? option.value : null
+                setTestName(known || procedureTypeFromLabel(text))
+              }}
+              options={[
+                { value: 'ogd', label: 'ENDOSCOPY', hint: 'upper GI' },
+                { value: 'colonoscopy', label: 'COLONOSCOPY', hint: 'lower GI' },
+                { value: 'both', label: 'ENDOSCOPY + COLONOSCOPY', hint: 'one report' },
+                ...savedProcedureLabels.map((l) => ({ value: `custom:${l}`, label: l })),
+              ]}
+              placeholder="Type or pick a procedure…"
+              disabled={dual}
+              emptyHint="New name — saved for the next patient."
+            />
+            <button
+              type="button"
+              className={`btn sm${dual ? ' primary' : ''}`}
+              style={{ whiteSpace: 'nowrap' }}
+              onClick={() => {
+                setDual((d) => !d)
+                if (!testName) setTestName('ogd')
+              }}
+              title="Create two separate reports for the same patient: ENDOSCOPY and COLONOSCOPY"
+            >
+              {dual ? <Check size={13} /> : <Plus size={13} />}
+              Both
+            </button>
+            <button
+              type="button"
+              className="np-x"
+              title="Clear"
+              onClick={() => {
+                setDual(false)
+                setTestName('')
+              }}
+            >
+              <X size={13} />
+            </button>
+          </div>
         </Row>
 
+        {dual ? (
+          <div style={{ margin: '-2px 0 8px 0' }}>
+            <Banner tone="info">
+              Two report ids will be created for this patient — <strong>ENDOSCOPY</strong> and{' '}
+              <strong>COLONOSCOPY</strong>. Each keeps its own pictures and prints its own report; open
+              whichever study is being performed.
+            </Banner>
+          </div>
+        ) : null}
+
         <Row label="Referrer">
-          <PickerInput
+          <Autocomplete
             value={form.referredBy}
             onChange={(v) => setForm((f) => ({ ...f, referredBy: v }))}
-            options={names}
+            options={[...new Set([...referrerOptions, ...names])]}
             placeholder="Referring physician"
+            emptyHint="New referrer — saved for next time."
           />
         </Row>
 
@@ -352,7 +451,8 @@ export default function PatientForm({ open, patient, doctors = [], onClose, onSa
 
         <Banner tone="info">
           <strong>Add</strong> saves the patient. <strong>Save &amp; open capture</strong> also creates the
-          procedure and opens the camera and report side by side.
+          procedure and opens the camera and report side by side. A patient who is already on file is
+          opened, never duplicated.
         </Banner>
       </div>
     </Modal>

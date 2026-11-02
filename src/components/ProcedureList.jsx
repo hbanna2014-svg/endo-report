@@ -22,6 +22,7 @@ import { buildPrintHtml } from '../lib/printHtml.js'
 import { hydratePrintImages } from '../lib/printImages.js'
 import { PROCEDURE_TYPES } from '../lib/anatomy.js'
 import { Topbar } from './Dashboard.jsx'
+import PrintPreview from './PrintPreview.jsx'
 import {
   Button,
   Card,
@@ -63,6 +64,7 @@ export default function ProcedureList({ onOpenProcedure, onRefreshStats }) {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [busyId, setBusyId] = useState(null)
+  const [printJob, setPrintJob] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState([])
@@ -123,8 +125,8 @@ export default function ProcedureList({ onOpenProcedure, onRefreshStats }) {
         })
       }
       const html = buildPrintHtml({ ...model, media })
-      const res = await api.report.print(html, `${model.reportNo} — ${model.patientLine.name}`)
-      if (res?.ok === false && res.reason) toast.push({ tone: 'warn', title: 'Printing did not complete', body: res.reason })
+      // Preview first: the Windows print dialog cannot show the page itself.
+      setPrintJob({ html, title: `${model.reportNo} — ${model.patientLine.name}` })
     } catch (err) {
       toast.push({ tone: 'err', title: 'Printing failed', body: err.message })
     } finally {
@@ -340,6 +342,13 @@ export default function ProcedureList({ onOpenProcedure, onRefreshStats }) {
           separate <span className="mono">.docx</span> file. Captured images are embedded into the Word document.
         </p>
       </Modal>
+
+      <PrintPreview
+        open={!!printJob}
+        html={printJob?.html}
+        title={printJob?.title}
+        onClose={() => setPrintJob(null)}
+      />
     </>
   )
 }
