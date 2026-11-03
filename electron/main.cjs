@@ -985,6 +985,7 @@ function registerIpc() {
   handle('patients:remove', (id) => db.deletePatient(id))
   handle('patients:nextRegNo', () => db.nextRegNo())
   handle('patients:referrers', () => db.listReferrers())
+  handle('patients:fieldHistory', () => db.listFieldHistory())
 
   /* Procedures ----------------------------------------------------------- */
   handle('procedures:list', (filters) => db.listProcedures(filters || {}))

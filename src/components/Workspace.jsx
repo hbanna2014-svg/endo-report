@@ -680,14 +680,23 @@ export default function Workspace({
 
   /** "Image Plus" print: particulars and pictures, no report text. */
   const printPictures = useCallback(
-    async (count) => {
+    async (count, ids) => {
       if (!model) return
       setBusy(true)
       try {
         const enriched = await withImages()
-        const html = buildImagePlusHtml({ ...model, media: enriched }, { count, images: enriched })
+        // Keep the plate's order: the sheet must print the pictures exactly as
+        // they were arranged in Image Plus.
+        const ordered = Array.isArray(ids) && ids.length
+          ? ids.map((id) => enriched.find((m) => m.id === id)).filter(Boolean)
+          : enriched
+        const html = buildImagePlusHtml(
+          { ...model, media: ordered },
+          { count: count || ordered.length, images: ordered },
+        )
         setPicturePrint(null)
-        setPrintJob({ html, title: `Image Plus — ${model.patientLine.name}` })
+        // `kind` keeps the picture sheet from locking the report as final.
+        setPrintJob({ html, title: `Image Plus — ${model.patientLine.name}`, kind: 'image-plus' })
       } catch (err) {
         toast.push({ tone: 'err', title: 'Printing failed', body: err.message })
       } finally {
@@ -723,6 +732,19 @@ export default function Workspace({
     setConfirmFinal(false)
     const res = await save({ changes: { status: 'final' }, silent: true })
     if (res) toast.push({ tone: 'ok', title: 'Report marked final', body: 'It is now locked as a signed report.' })
+  }, [save, toast])
+
+  /**
+   * A successful print is what completes a report: the sheet has left the
+   * printer, so the record is locked and the Finalise button changes colour.
+   * Capturing pictures alone never does this — that only autosaves.
+   */
+  const markPrinted = useCallback(async () => {
+    try {
+      await save({ changes: { status: 'final' }, silent: true })
+    } catch (err) {
+      toast.push({ tone: 'warn', title: 'Printed, but the status was not updated', body: err.message })
+    }
   }, [save, toast])
 
   const importFiles = useCallback(async () => {
@@ -971,24 +993,27 @@ export default function Workspace({
               Record
             </Button>
           )}
-          <Button size="sm" icon={Save} onClick={() => save({})} disabled={saving}>
-            Save
-          </Button>
-          <Button size="sm" icon={FileText} onClick={doDocx} disabled={busy}>
-            Word
-          </Button>
+          {/* Save and Word were removed on request: Print saves the report on its
+              way to the printer, and Word export lives on the Report card. */}
           <Button size="sm" variant="primary" icon={Printer} onClick={doPrint} disabled={busy}>
             Print
           </Button>
           <Button
             size="sm"
             variant="success"
+            className={procedure.status === 'final' ? 'is-final' : ''}
             icon={CheckCircle2}
-            disabled={!!analysis?.audit.errors}
-            title={analysis?.audit.errors ? 'Resolve the blocking issues first' : 'Mark this report final'}
+            disabled={procedure.status === 'final' || !!analysis?.audit.errors}
+            title={
+              procedure.status === 'final'
+                ? 'This report has been printed and finalised'
+                : analysis?.audit.errors
+                  ? 'Resolve the blocking issues first'
+                  : 'Mark this report final'
+            }
             onClick={() => setConfirmFinal(true)}
           >
-            Finalise
+            {procedure.status === 'final' ? 'Finalised' : 'Finalise'}
           </Button>
         </div>
       </Topbar>
@@ -1259,6 +1284,7 @@ export default function Workspace({
         onAutoFill={autoFillPlate}
         onClearAll={clearPlate}
         onCapture={() => cap.captureStill()}
+        onPrint={printPictures}
         live={cap.live}
         busy={busy}
       />
@@ -1375,6 +1401,7 @@ export default function Workspace({
         open={!!printJob}
         html={printJob?.html}
         title={printJob?.title}
+        onPrinted={printJob?.kind === 'image-plus' ? undefined : markPrinted}
         onClose={() => setPrintJob(null)}
         onSavePdf={() => {
           setPrintJob(null)

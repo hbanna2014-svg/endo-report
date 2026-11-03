@@ -42,6 +42,7 @@ export const api = {
     remove: guard(bridge?.patients?.remove, 'patients.remove'),
     nextRegNo: guard(bridge?.patients?.nextRegNo, 'patients.nextRegNo'),
     referrers: guard(bridge?.patients?.referrers, 'patients.referrers'),
+    fieldHistory: guard(bridge?.patients?.fieldHistory, 'patients.fieldHistory'),
   },
   procedures: {
     list: guard(bridge?.procedures?.list, 'procedures.list'),

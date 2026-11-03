@@ -8,7 +8,7 @@
  */
 
 import React, { useMemo } from 'react'
-import { Camera, ImagePlus as ImagePlusIcon, Sparkles, Trash2, X, Video } from 'lucide-react'
+import { Camera, ImagePlus as ImagePlusIcon, Printer, Sparkles, Trash2, X, Video } from 'lucide-react'
 
 import { Button, Modal } from './ui.jsx'
 import { useThumbs } from './ReportPlate.jsx'
@@ -24,6 +24,7 @@ export default function ImagePlus({
   onAutoFill,
   onClearAll,
   onCapture,
+  onPrint,
   live = false,
   busy = false,
 }) {
@@ -43,6 +44,8 @@ export default function ImagePlus({
           {[
             ['grid4', 'Image Plus 4'],
             ['grid6', 'Image Plus 6'],
+            ['form7', 'Image Plus 7'],
+            ['grid8', 'Image Plus 8'],
           ].map(([id, label]) => (
             <label key={id} className={`ip-radio${plan.mode === id ? ' on' : ''}`}>
               <input
@@ -70,8 +73,21 @@ export default function ImagePlus({
             Capture now
           </Button>
         ) : null}
-        <Button size="sm" variant="primary" onClick={onClose}>
-          Done
+        {/* Print replaces Done: the sheet goes straight to A4 with whatever is
+            on the plate — four, six, seven or eight pictures. */}
+        <Button
+          size="sm"
+          variant="primary"
+          icon={Printer}
+          onClick={() => onPrint?.(items.length, items.map((m) => m.id))}
+          disabled={!items.length || busy}
+          title={
+            items.length
+              ? `Print ${items.length} picture(s) on one A4 sheet`
+              : 'Place at least one picture first'
+          }
+        >
+          Print
         </Button>
       </div>
 

@@ -615,10 +615,13 @@ export function buildHospitalPrintHtml(model) {
 export function buildImagePlusHtml(model, options = {}) {
   const f = model.hospital
   if (!f) return ''
-  const count = options.count === 6 ? 6 : 4
+  // Four, six, seven or eight pictures all fit one A4 sheet in two columns.
+  const ALLOWED = [4, 6, 7, 8]
+  const requested = Number(options.count)
+  const count = ALLOWED.includes(requested) ? requested : 4
   const chosen = (options.images || model.media || []).filter((m) => m.kind === 'image').slice(0, count)
   const font = (model.template.layout || {}).fontFamily || 'Arial'
-  const cols = count === 6 ? 2 : 2
+  const cols = 2
   const rows = Math.ceil(count / cols)
 
   const cells = Array.from({ length: count })

@@ -290,6 +290,11 @@ async function run() {
   check('referrers include the doctor directory', referrers.includes('Dr. Test Endoscopist'), referrers.join(', '))
   check('referrer list is de-duplicated and sorted', referrers.length === new Set(referrers).size)
 
+  const history = await db.listFieldHistory()
+  check('field history remembers the patient name', (history.name || []).includes('E2E Test Patient'))
+  check('field history remembers the phone', (history.phone || []).includes('01999-111111'))
+  check('field history has a bucket for every field', ['address', 'town', 'state', 'postCode', 'indication'].every((k) => Array.isArray(history[k])))
+
   const labels = await db.listProcedureLabels()
   check('a saved procedure name is remembered', labels.includes('COLONOSCOPY'), labels.join(', '))
   await db.rememberProcedureLabel('colonoscopy')

@@ -35,7 +35,7 @@ export const DEFAULT_TEMPLATE = {
     showLogo: true,
     showImages: true,
     /** 'flow' = as many images as captured · 'grid4' = fixed 2x2 · 'grid6' = fixed 2x3 */
-    imageLayout: 'grid4',
+    imageLayout: 'grid6',
     imageColumns: 3,
     /** printed picture frame, in millimetres — 56 × 42 (4:3) leaves room for
      *  four frames down the right column at the same size as the top three */
@@ -69,11 +69,14 @@ export const IMAGE_LAYOUTS = [
   { id: 'form7', label: 'Seven pictures — three on top, four on the right', capacity: 7, columns: 3, top: 3, side: 4 },
   { id: 'grid4', label: 'Four pictures — full-height right column', capacity: 4, columns: 1, top: 0, side: 4 },
   { id: 'grid6', label: 'Six pictures — three on top, three on the right', capacity: 6, columns: 3, top: 3, side: 3 },
+  { id: 'grid8', label: 'Eight pictures — four on top, four on the right', capacity: 8, columns: 4, top: 4, side: 4 },
   { id: 'flow', label: 'All captured images (automatic)', capacity: 0, columns: 3, top: 0, side: 0 },
 ]
 
 export function imageLayoutDef(id) {
-  return IMAGE_LAYOUTS.find((l) => l.id === id) || IMAGE_LAYOUTS[0]
+  // Six pictures is the house default; a report that has never chosen a layout
+  // must not silently fall back to four.
+  return IMAGE_LAYOUTS.find((l) => l.id === id) || IMAGE_LAYOUTS.find((l) => l.id === 'grid6') || IMAGE_LAYOUTS[0]
 }
 
 /**

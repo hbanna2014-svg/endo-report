@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('endoreport', {
     remove: (id) => invoke('patients:remove', id),
     nextRegNo: () => invoke('patients:nextRegNo'),
     referrers: () => invoke('patients:referrers'),
+    fieldHistory: () => invoke('patients:fieldHistory'),
   },
 
   procedures: {

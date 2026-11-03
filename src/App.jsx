@@ -31,8 +31,9 @@ import BackupView from './components/BackupView.jsx'
 
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, section: 'Clinic' },
-  { id: 'patients', label: 'Patient Archive', icon: Users, section: 'Clinic' },
-  { id: 'procedures', label: 'Reports', icon: ClipboardList, section: 'Clinic' },
+  // The separate patient register was removed on request; the report list is
+  // now the archive, and a new patient is entered from a single button.
+  { id: 'procedures', label: 'Patient Archive', icon: ClipboardList, section: 'Clinic' },
   { id: 'workspace', label: 'Current procedure', icon: Activity, section: 'Clinic' },
   { id: 'templates', label: 'Report template', icon: FileText, section: 'Configuration' },
   { id: 'settings', label: 'Settings', icon: SettingsIcon, section: 'Configuration' },
@@ -42,6 +43,9 @@ const NAV = [
 export default function App() {
   const toast = useToast()
   const [view, setView] = useState('dashboard')
+  /* Bumped when "New patient" is pressed anywhere, so the registration form
+     opens immediately instead of landing on a list first. */
+  const [newPatientToken, setNewPatientToken] = useState(0)
   const [navOpen, setNavOpen] = useState(true)
   const [meta, setMeta] = useState(null)
   const [templates, setTemplates] = useState([])
@@ -153,7 +157,10 @@ export default function App() {
     const off = api.app.onMenu((payload) => {
       if (typeof payload === 'string') {
         if (payload.startsWith('nav:')) setView(payload.slice(4))
-        else if (payload === 'patient:new') setView('patients')
+        else if (payload === 'patient:new') {
+          setView('patients')
+          setNewPatientToken((n) => n + 1)
+        }
         else if (payload.startsWith('report:') || payload.startsWith('capture:')) {
           setView('workspace')
           setTimeout(() => menuHandlerRef.current?.(payload), 60)
@@ -204,6 +211,7 @@ export default function App() {
         return
       }
       setView(next)
+      if (opts.newPatient) setNewPatientToken((n) => n + 1)
       if (opts.patientId !== undefined) setActivePatientId(opts.patientId)
     },
     [activeProcedureId, toast],
@@ -262,7 +270,7 @@ export default function App() {
                 <button
                   key={n.id}
                   type="button"
-                  className={`nav-item ${view === n.id ? 'active' : ''}`}
+                  className={`nav-item ${view === n.id || (n.id === 'procedures' && view === 'patients') ? 'active' : ''}`}
                   onClick={() => go(n.id)}
                   style={disabled ? { opacity: 0.55 } : undefined}
                 >
@@ -311,6 +319,7 @@ export default function App() {
         {view === 'patients' ? (
           <PatientList
             doctors={doctors}
+            newPatientToken={newPatientToken}
             onOpenProcedure={openProcedure}
             onGoToWorkspace={(patientId, procedureId) => {
               setActivePatientId(patientId)

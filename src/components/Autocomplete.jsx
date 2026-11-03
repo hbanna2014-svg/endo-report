@@ -26,6 +26,7 @@ export default function Autocomplete({
   maxResults = 8,
   emptyHint = 'New entry — it will be saved for next time.',
   className = '',
+  autoFocus = false,
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState(value || '')
@@ -38,6 +39,12 @@ export default function Autocomplete({
   useEffect(() => {
     setQuery(value || '')
   }, [value])
+
+  // A dialog that autofocuses this box must not also drop the whole list open
+  // over the form; the menu belongs to typing, not to receiving focus.
+  useEffect(() => {
+    setOpen(false)
+  }, [])
 
   useEffect(() => {
     if (!open) return undefined
@@ -119,13 +126,16 @@ export default function Autocomplete({
           disabled={disabled}
           placeholder={placeholder}
           autoComplete="off"
+          autoFocus={autoFocus}
           onChange={(e) => {
-            setQuery(e.target.value)
-            onChange?.(e.target.value)
-            setOpen(true)
+            const next = e.target.value
+            setQuery(next)
+            onChange?.(next)
+            // Only after typing: opening on focus covered the whole form the
+            // moment the dialog appeared, which hid the fields beneath it.
+            setOpen(next.trim().length >= 1)
             setActive(-1)
           }}
-          onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
         />
         <button

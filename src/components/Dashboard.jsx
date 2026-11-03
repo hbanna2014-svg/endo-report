@@ -310,7 +310,8 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
       <div className="content">
         <div className="hero-bar">
           <div className="hero-frame">
-            <Button variant="primary" icon={UserPlus} onClick={() => onNavigate('patients')}>
+            {/* Straight into the registration form — no list in between. */}
+            <Button variant="primary" icon={UserPlus} onClick={() => onNavigate('patients', { newPatient: true })}>
               New patient
             </Button>
             <Button icon={ClipboardList} onClick={() => onNavigate('procedures')}>
@@ -476,7 +477,11 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
                     dayDoctor ? (
                       <Button onClick={() => setDayDoctor('')}>Show all doctors</Button>
                     ) : (
-                      <Button variant="primary" icon={UserPlus} onClick={() => onNavigate('patients')}>
+                      <Button
+                        variant="primary"
+                        icon={UserPlus}
+                        onClick={() => onNavigate('patients', { newPatient: true })}
+                      >
                         New patient
                       </Button>
                     )

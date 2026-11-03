@@ -123,7 +123,7 @@ export function ProcedureChip({ testName }) {
 
 /* ------------------------------------------------------------------- Modal --- */
 
-export function Modal({ open, onClose, title, children, footer, width = '' }) {
+export function Modal({ open, onClose, title, children, footer, width = '', tone = '' }) {
   useEffect(() => {
     if (!open) return undefined
     const onKey = (e) => {
@@ -136,7 +136,7 @@ export function Modal({ open, onClose, title, children, footer, width = '' }) {
   if (!open) return null
   return (
     <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.() }}>
-      <div className={`modal ${width}`} onMouseDown={(e) => e.stopPropagation()}>
+      <div className={`modal ${width}${tone ? ` tone-${tone}` : ''}`} onMouseDown={(e) => e.stopPropagation()}>
         <header className="modal-head">
           <h3>{title}</h3>
           <div className="spacer" />

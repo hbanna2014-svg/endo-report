@@ -87,6 +87,9 @@ export default function RichFindings({ html, onSave, onReset, custom = false, pl
   const focused = useRef(false)
   const fileRef = useRef(null)
   const saveTimer = useRef(null)
+  /* The last selection inside the editor, so formatting still applies after a
+     toolbar control has taken the focus away. */
+  const savedRange = useRef(null)
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
@@ -102,6 +105,20 @@ export default function RichFindings({ html, onSave, onReset, custom = false, pl
     }
   }, [])
 
+  /* Remember where the caret is whenever it sits inside this editor. */
+  const rememberSelection = () => {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return
+    const range = sel.getRangeAt(0)
+    const el = ref.current
+    if (el && el.contains(range.commonAncestorContainer)) savedRange.current = range.cloneRange()
+  }
+
+  useEffect(() => {
+    document.addEventListener('selectionchange', rememberSelection)
+    return () => document.removeEventListener('selectionchange', rememberSelection)
+  }, [])
+
   const focusEditor = () => {
     const el = ref.current
     if (!el) return null
@@ -109,8 +126,25 @@ export default function RichFindings({ html, onSave, onReset, custom = false, pl
     return el
   }
 
+  /**
+   * Apply a formatting command.
+   *
+   * The selection has to be put back first: opening a <select> moves focus out
+   * of the editor, and the engine then has nothing to format — which is exactly
+   * why Font and Size appeared to do nothing at all.
+   */
   const exec = (cmd, value = null) => {
-    if (!focusEditor()) return
+    const el = ref.current
+    if (!el) return
+    el.focus()
+    const range = savedRange.current
+    if (range && el.contains(range.commonAncestorContainer)) {
+      const sel = window.getSelection()
+      if (sel) {
+        sel.removeAllRanges()
+        sel.addRange(range)
+      }
+    }
     try {
       document.execCommand(cmd, false, value)
     } catch {
@@ -165,7 +199,9 @@ export default function RichFindings({ html, onSave, onReset, custom = false, pl
 
   return (
     <div className="rich-findings">
-      <div className="format-bar" onMouseDown={(e) => e.preventDefault()}>
+      {/* No preventDefault on the whole bar: it also blocked the native
+          <select> dropdowns from opening. Buttons keep the caret themselves. */}
+      <div className="format-bar">
         <select
           className="fmt-select fmt-font"
           value=""
@@ -202,7 +238,13 @@ export default function RichFindings({ html, onSave, onReset, custom = false, pl
           <React.Fragment key={gi}>
             <span className="fmt-sep" />
             {group.map((b) => (
-              <button key={b.cmd} type="button" title={b.title} onClick={() => exec(b.cmd)}>
+              <button
+                key={b.cmd}
+                type="button"
+                title={b.title}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => exec(b.cmd)}
+              >
                 <b.icon size={13} />
               </button>
             ))}
@@ -226,7 +268,12 @@ export default function RichFindings({ html, onSave, onReset, custom = false, pl
             </option>
           ))}
         </select>
-        <button type="button" title="Insert a picture" onClick={() => fileRef.current?.click()}>
+        <button
+          type="button"
+          title="Insert a picture"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => fileRef.current?.click()}
+        >
           <ImagePlus size={13} />
         </button>
         <input
@@ -245,13 +292,18 @@ export default function RichFindings({ html, onSave, onReset, custom = false, pl
         <label className="fmt-color" title="Text colour">
           <input type="color" defaultValue="#111827" onChange={(e) => exec('foreColor', e.target.value)} />
         </label>
-        <button type="button" title="Undo" onClick={() => exec('undo')}>
+        <button type="button" title="Undo" onMouseDown={(e) => e.preventDefault()} onClick={() => exec('undo')}>
           <Undo2 size={13} />
         </button>
-        <button type="button" title="Redo" onClick={() => exec('redo')}>
+        <button type="button" title="Redo" onMouseDown={(e) => e.preventDefault()} onClick={() => exec('redo')}>
           <Redo2 size={13} />
         </button>
-        <button type="button" title="Clear formatting" onClick={() => exec('removeFormat')}>
+        <button
+          type="button"
+          title="Clear formatting"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => exec('removeFormat')}
+        >
           <Eraser size={13} />
         </button>
 
@@ -273,8 +325,11 @@ export default function RichFindings({ html, onSave, onReset, custom = false, pl
         suppressContentEditableWarning
         spellCheck
         data-placeholder={placeholder || 'Findings…'}
+        onMouseUp={rememberSelection}
+        onKeyUp={rememberSelection}
         onFocus={() => {
           focused.current = true
+          rememberSelection()
         }}
         onInput={queueSave}
         onBlur={save}

@@ -20,7 +20,7 @@ import {
 
 import { api } from '../lib/api.js'
 import { emptyProcedure } from '../lib/autoReport.js'
-import { PROCEDURE_TYPES } from '../lib/anatomy.js'
+import { PROCEDURE_TYPES, procedureTypeFromLabel } from '../lib/anatomy.js'
 import { Topbar } from './Dashboard.jsx'
 import PatientForm from './PatientForm.jsx'
 import {
@@ -62,6 +62,8 @@ function StartProcedureDialog({ open, patient, doctors, onClose, onStarted }) {
   const [busy, setBusy] = useState(false)
   /* Two separate ids for one patient, instead of one combined report. */
   const [dual, setDual] = useState(false)
+  /* The clinic names the two tests itself. */
+  const [dualNames, setDualNames] = useState(['ENDOSCOPY', 'COLONOSCOPY'])
 
   useEffect(() => {
     if (!open) return
@@ -71,13 +73,14 @@ function StartProcedureDialog({ open, patient, doctors, onClose, onStarted }) {
     setAssistant(patient?.assistant || '')
     setScope('')
     setDual(false)
+    setDualNames(['ENDOSCOPY', 'COLONOSCOPY'])
   }, [open, patient])
 
   const start = async () => {
     if (!patient) return
     setBusy(true)
     try {
-      const types = dual ? ['ogd', 'colonoscopy'] : [testName]
+      const types = dual ? dualNames.map((n) => procedureTypeFromLabel(n)) : [testName]
       let first = null
       let reused = 0
 
@@ -98,6 +101,7 @@ function StartProcedureDialog({ open, patient, doctors, onClose, onStarted }) {
           scopeModel: scope,
           indication: patient.indication || '',
           status: 'draft',
+          ...(dual ? { procedureLabel: dualNames[types.indexOf(type)] } : {}),
         }
         // eslint-disable-next-line no-await-in-loop
         const saved = await api.procedures.save(patient.id, payload)
@@ -107,7 +111,7 @@ function StartProcedureDialog({ open, patient, doctors, onClose, onStarted }) {
       toast.push({
         tone: reused ? 'warn' : 'ok',
         title: reused ? 'Existing draft opened — no duplicate created' : 'Report started',
-        body: types.map((t) => PROCEDURE_TYPES.find((x) => x.id === t)?.label).filter(Boolean).join(' + '),
+        body: dual ? dualNames.join(' + ') : types.map((t) => PROCEDURE_TYPES.find((x) => x.id === t)?.label).filter(Boolean).join(' + '),
       })
       onStarted?.(first)
       onClose?.()
@@ -163,10 +167,20 @@ function StartProcedureDialog({ open, patient, doctors, onClose, onStarted }) {
         <label className="row small" style={{ gap: 8, cursor: 'pointer' }}>
           <input type="checkbox" checked={dual} onChange={(e) => setDual(e.target.checked)} />
           <span>
-            Create <strong>two separate reports</strong> — ENDOSCOPY and COLONOSCOPY — each with its own id, pictures and
-            printout
+            Create <strong>two separate reports</strong>, each with its own id, pictures and printout
           </span>
         </label>
+
+        {dual ? (
+          <div className="row" style={{ gap: 10, marginTop: 8 }}>
+            <Field label="Test 1">
+              <Input value={dualNames[0]} onChange={(e) => setDualNames(([, s]) => [e.target.value, s])} />
+            </Field>
+            <Field label="Test 2">
+              <Input value={dualNames[1]} onChange={(e) => setDualNames(([f]) => [f, e.target.value])} />
+            </Field>
+          </div>
+        ) : null}
       </div>
 
       <div className="banner info" style={{ marginTop: 14 }}>
@@ -180,7 +194,7 @@ function StartProcedureDialog({ open, patient, doctors, onClose, onStarted }) {
   )
 }
 
-export default function PatientList({ doctors, onOpenProcedure, onGoToWorkspace, onRefreshStats }) {
+export default function PatientList({ doctors, onOpenProcedure, onGoToWorkspace, onRefreshStats, newPatientToken = 0 }) {
   const toast = useToast()
   const [search, setSearch] = useState('')
   const [rows, setRows] = useState([])
@@ -188,6 +202,14 @@ export default function PatientList({ doctors, onOpenProcedure, onGoToWorkspace,
   const [procedures, setProcedures] = useState([])
   const [loading, setLoading] = useState(true)
   const [formOpen, setFormOpen] = useState(false)
+
+  /* "New patient" from the dashboard or the File menu arrives here as a new
+     token and opens the form straight away. */
+  useEffect(() => {
+    if (!newPatientToken) return
+    setEditing(null)
+    setFormOpen(true)
+  }, [newPatientToken])
   const [editing, setEditing] = useState(null)
   const [startOpen, setStartOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(null)

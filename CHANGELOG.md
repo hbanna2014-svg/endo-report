@@ -4,6 +4,49 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.14 — 2026-11-03
+
+### Added
+
+- **The two "Both" reports can be named.** With *Both* on, **Test 1** and **Test 2** are editable
+  fields (defaults `ENDOSCOPY` and `COLONOSCOPY`). The clinical template follows the words typed —
+  anything naming the colon gets the colonoscopy sections — and each report prints its own name on
+  the band. The two fields sit in a colour-coded panel — blue for the upper GI test, teal for the colon — and the same pair appears in the *New report* dialog.
+- **Every text box in the patient form remembers what was saved.** Name, phone, address, town,
+  state, post code, identity number, doctor and referrer all suggest previously entered values as
+  you type — two or three letters are enough. Picking a suggestion fills the box and leaves the text
+  editable, so a name can be extended or trimmed afterwards.
+
+### Changed
+
+- **Six pictures is now the default plate** for every report, and changing the plate affects only
+  the report you changed it on.
+- **The sidebar is shorter.** The separate patient register is gone and **Reports is now called
+  Patient Archive**, so there is one archive instead of two similar screens.
+- **Dashboard → New patient opens the registration form immediately**, with no list in between.
+- **Image Plus prints instead of closing.** The *Done* button is now **Print**: the pictures arranged
+  on the plate go straight to one A4 sheet, in the order they are shown. Plates for **4, 6, 7 and 8**
+  pictures are all offered.
+- **The top toolbar is shorter.** *Save* and *Word* were removed; the Word export still lives on the
+  Report card. **Print now saves the report and completes it** — the Finalise button turns green and
+  reads "Finalised" as the sheet leaves the printer.
+- **The Report card lost two buttons.** *Copy text* and *Save PDF* are gone; Word and Print remain.
+- **The New Patient card is colour-washed.** A deep blue-violet-teal gradient rims the dialog, with a
+  matching strip along the top, a tinted title bar, a colour wash behind the fields and a tinted footer;
+  the divider between the patient and visit blocks blends the same three colours. Inside this card the
+  text is set larger — 18px title, 15px fields, 13.5px labels — with a wider label column.
+
+### Fixed
+
+- **The suggestion list no longer drops open by itself.** It opened as soon as the form appeared,
+  covering the fields underneath; it now opens only once something has been typed.
+- **Font and Size in the report editor did nothing.** The format bar cancelled the mouse-down event
+  for everything inside it, which also stopped the native `<select>` dropdowns from opening at all.
+  The bar no longer cancels that event, the format buttons keep the caret themselves, and the editor
+  remembers its selection so a font or size still applies after a dropdown has taken the focus.
+
+---
+
 ## 0.5.13 — 2026-11-02
 
 ### Fixed

@@ -1171,6 +1171,62 @@ a { color: var(--brand); }
 
 .np-pair { grid-template-columns: 92px 1fr 56px 1fr; }
 
+.both-btn { border-color: #ddd6fe; color: var(--both); background: #faf8ff; }
+.both-btn:hover { background: #f3efff; border-color: #c4b5fd; }
+.both-btn.on {
+  color: #fff; border-color: #7c3aed;
+  background: linear-gradient(180deg, #8b5cf6 0%, #7c3aed 100%);
+  box-shadow: 0 1px 2px rgba(76, 29, 149, .25);
+}
+
+/* ---- the "Both" block: two named tests, colour-coded ------------------ */
+.np-dual {
+  position: relative;
+  margin: 0 0 12px;
+  padding: 13px 14px 9px 16px;
+  border-radius: 13px;
+  border: 1.5px solid #d5cdfb;
+  background:
+    radial-gradient(115% 130% at 0% 0%, #eaf2ff 0%, rgba(234, 242, 255, 0) 58%),
+    radial-gradient(115% 130% at 100% 0%, #e2fbf6 0%, rgba(226, 251, 246, 0) 58%),
+    linear-gradient(180deg, #f8f6ff 0%, #f4fcfb 100%);
+  box-shadow: inset 0 1px 0 #fff, 0 8px 18px -14px rgba(76, 29, 149, .55);
+  overflow: hidden;
+}
+.np-dual::before {
+  content: '';
+  position: absolute; top: 0; bottom: 0; left: 0; width: 4px;
+  background: linear-gradient(180deg, var(--ogd) 0%, var(--both) 48%, var(--colon) 100%);
+}
+.np-dual .np-label { font-size: 12px; letter-spacing: .2px; }
+.np-dual .np-label.tone-a { color: #1d63c9; }
+.np-dual .np-label.tone-b { color: #0a7c6f; }
+.np-dual .ac.tone-a .input {
+  border-color: #b9d2fb; background: #fff;
+  box-shadow: inset 3px 0 0 var(--ogd), 0 1px 2px rgba(47, 126, 242, .12);
+}
+.np-dual .ac.tone-b .input {
+  border-color: #a9e2da; background: #fff;
+  box-shadow: inset 3px 0 0 var(--colon), 0 1px 2px rgba(13, 148, 136, .12);
+}
+.np-dual .ac.tone-a .input:focus { border-color: var(--ogd); box-shadow: inset 3px 0 0 var(--ogd), 0 0 0 3px rgba(47, 126, 242, .18); }
+.np-dual .ac.tone-b .input:focus { border-color: var(--colon); box-shadow: inset 3px 0 0 var(--colon), 0 0 0 3px rgba(13, 148, 136, .18); }
+.np-dual .ac.tone-a .ac-toggle { color: #2f7ef2; }
+.np-dual .ac.tone-b .ac-toggle { color: #0d9488; }
+.np-dual-note {
+  margin: 7px 0 0 92px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: #4b5563;
+}
+.np-dual-note.bad { color: var(--danger); font-weight: 600; }
+.np-dual-note .pill {
+  display: inline-block; padding: 1px 7px; border-radius: 999px;
+  font-weight: 700; font-size: 11px;
+}
+.np-dual-note .pill.a { background: #dbeafe; color: #1d4ed8; }
+.np-dual-note .pill.b { background: #ccfbf1; color: #0f766e; }
+
 .np-pick { position: relative; display: flex; gap: 6px; flex: 1; min-width: 0; }
 .np-plus {
   width: 28px; flex: 0 0 28px; display: grid; place-items: center;
@@ -1199,6 +1255,67 @@ a { color: var(--brand); }
 .np-x:hover { background: #fdeeee; }
 
 .np-div { border-top: 1px solid var(--line); margin: 3px 0 1px; }
+
+/* ---- a colour-washed dialog: gradient rim, tinted header and foot ------ */
+.modal.tone-vivid {
+  position: relative;
+  border: 1.6px solid transparent;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, #ffffff 0%, #fbfdff 46%, #f7fdfc 100%) padding-box,
+    linear-gradient(135deg, #3a6cf0 0%, #7a48e8 44%, #0d9c86 100%) border-box;
+  box-shadow:
+    0 26px 64px -26px rgba(30, 41, 99, .45),
+    0 3px 12px rgba(15, 23, 42, .07);
+}
+.modal.tone-vivid::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, #1d5fe0 0%, #6d28d9 50%, #0b8f7b 100%);
+}
+.modal.tone-vivid .modal-head {
+  border-bottom: 1px solid #c7d5f5;
+  background: linear-gradient(100deg, #c9dcff 0%, #dccdff 52%, #bff0e6 100%);
+  padding-top: 17px;
+}
+.modal.tone-vivid .modal-head h3 {
+  color: #1e3a8a;
+  font-size: 16px;
+  letter-spacing: .2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.modal.tone-vivid .modal-head h3::before {
+  content: '';
+  width: 9px; height: 9px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--ogd), var(--both) 55%, var(--colon));
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, .14);
+  flex: 0 0 9px;
+}
+.modal.tone-vivid .modal-head .btn:hover { background: #ffffffcc; }
+.modal.tone-vivid .modal-body {
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(147, 187, 252, .82) 0%, rgba(147, 187, 252, 0) 64%),
+    radial-gradient(120% 90% at 100% 100%, rgba(94, 234, 212, .78) 0%, rgba(94, 234, 212, 0) 64%);
+}
+.modal.tone-vivid .modal-foot {
+  border-top: 1px solid #c7d5f5;
+  background: linear-gradient(100deg, #d5e3ff 0%, #e4d6ff 52%, #cbf6ec 100%);
+}
+.modal.tone-vivid .np-div {
+  border-top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(29, 95, 224, 0), #9fbcf8 20%, #b9a3f5 50%, #7ddfce 82%, rgba(11, 143, 123, 0));
+  margin: 7px 0 4px;
+}
+.modal.tone-vivid .np-wrap .input,
+.modal.tone-vivid .np-wrap .select {
+  background: #fff;
+  border-color: #dbe4f3;
+}
+.modal.tone-vivid .np-wrap .input:hover,
+.modal.tone-vivid .np-wrap .select:hover { border-color: #bfd2ef; }
 
 .np-more {
   display: flex; align-items: center; gap: 6px; margin-top: 4px;
@@ -1407,3 +1524,35 @@ a { color: var(--brand); }
 .ac-hint { font-size: 10.5px; color: var(--ink-4); white-space: nowrap; }
 .ac-custom { border-top: 1px dashed var(--line) !important; margin-top: 3px; padding-top: 7px !important; }
 .ac-custom .ac-label { color: var(--brand-dark); font-weight: 600; }
+
+/* A printed / finalised report: the Finalise button turns into a completed
+   state instead of staying an invitation to click. */
+.btn.is-final,
+.btn.is-final:hover {
+  background: #dcfce7; border-color: #86efac; color: #15803d; box-shadow: none;
+}
+.btn.is-final:disabled { opacity: 1; cursor: default; }
+
+/* ---- bigger, easier reading inside the patient card ------------------- */
+.modal.tone-vivid .modal-head h3 { font-size: 18px; font-weight: 700; }
+.modal.tone-vivid .modal-head h3::before { width: 10px; height: 10px; flex: 0 0 10px; }
+.modal.tone-vivid .np-wrap { max-width: 660px; gap: 11px; }
+.modal.tone-vivid .np-row { grid-template-columns: 108px 1fr; gap: 12px; }
+.modal.tone-vivid .np-pair { grid-template-columns: 108px 1fr 50px 1fr; }
+.modal.tone-vivid .np-label { font-size: 13.5px; color: #1b2e5c; }
+.modal.tone-vivid .np-wrap .input,
+.modal.tone-vivid .np-wrap .select,
+.modal.tone-vivid .np-wrap .textarea { font-size: 15px; padding: 9px 11px; }
+.modal.tone-vivid .np-radio label { font-size: 14px; }
+.modal.tone-vivid .np-div { margin: 9px 0 5px; }
+.modal.tone-vivid .np-dual-note { margin-left: 108px; font-size: 12.5px; }
+.modal.tone-vivid .np-dual .np-label { font-size: 13px; }
+.modal.tone-vivid .modal-foot .btn { font-size: 13.5px; }
+.modal.tone-vivid .small { font-size: 12.5px; }
+
+/* Keep the coloured panel inside the column so a narrow window never scrolls
+   sideways; 16px of panel padding + a 92px label column lines the inner
+   labels up with the outer ones (108px). */
+.modal.tone-vivid .np-dual .np-row { grid-template-columns: 92px 1fr; }
+.modal.tone-vivid .np-dual .np-pair { grid-template-columns: 92px 1fr 50px 1fr; }
+.modal.tone-vivid .np-dual-note { margin-left: 92px; }

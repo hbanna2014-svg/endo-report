@@ -6,7 +6,7 @@
  */
 
 import React from 'react'
-import { Printer, Download, FileText, Copy, Sparkles, Images } from 'lucide-react'
+import { Printer, Download, Sparkles, Images } from 'lucide-react'
 
 import { Button, Card, Chip, Empty, SeverityChip } from './ui.jsx'
 import ReportPlate from './ReportPlate.jsx'
@@ -50,14 +50,10 @@ export default function ReportView({
   const plan = model.imagePlan || { mode: 'flow', slots: [], filled: 0, capacity: 0 }
   const sideCount = plan.mode === 'grid6' ? 3 : plan.mode === 'grid4' ? 4 : 0
 
+  /* Copy text and Save PDF were removed at the clinic's request — the Word
+     export and Print cover both jobs. */
   const actionsJsx = (
     <>
-      <Button size="sm" icon={Copy} onClick={onCopy} disabled={busy}>
-        Copy text
-      </Button>
-      <Button size="sm" icon={FileText} onClick={onPdf} disabled={busy}>
-        Save PDF
-      </Button>
       <Button size="sm" icon={Download} onClick={onDocx} disabled={busy}>
         Word
       </Button>

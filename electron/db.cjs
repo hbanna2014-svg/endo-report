@@ -292,6 +292,7 @@ async function init(dir) {
         JSON.stringify({ reportStatus: 'draft', imageColumns: 3, autoImpressions: true, language: 'en' }),
       ])
     }
+    await applyProductMigrations()
     return db
   })()
 
@@ -521,6 +522,58 @@ async function listPatients(search = '', limit = 500) {
  * doctor directory. This is what makes the Referrer box suggest names the
  * clinic actually uses, without anybody maintaining a list.
  */
+/* Columns whose values are worth remembering and suggesting again. Fixed list,
+   so the identifiers below can never come from user input. */
+const HISTORY_COLUMNS = [
+  ['name', 'name'],
+  ['phone', 'phone'],
+  ['address', 'address'],
+  ['town', 'town'],
+  ['state', 'state'],
+  ['post_code', 'postCode'],
+  ['identity_no', 'identityNo'],
+  ['referred_by', 'referredBy'],
+  ['performing_doctor', 'performingDoctor'],
+  ['indication', 'indication'],
+]
+
+/**
+ * Every distinct value ever saved in each patient field, so every box in the
+ * registration form can suggest what was typed before.
+ */
+async function listFieldHistory() {
+  const out = {}
+  for (const [column, key] of HISTORY_COLUMNS) {
+    // eslint-disable-next-line no-await-in-loop
+    const rows = await q(
+      `SELECT DISTINCT trim(${column}) AS v
+         FROM patients
+        WHERE COALESCE(trim(${column}), '') <> ''
+        ORDER BY v ASC
+        LIMIT 300`,
+    )
+    out[key] = rows.map((r) => r.v)
+  }
+  return out
+}
+
+/**
+ * Product-level defaults the clinic asked for. Runs once per installation, so a
+ * later deliberate choice is never overwritten on the next start.
+ */
+async function applyProductMigrations() {
+  const seen = (await getSetting('migrations', {})) || {}
+  if (!seen.plateSix) {
+    // Six pictures on the plate by default, for every report.
+    await q(
+      `UPDATE templates
+          SET payload = jsonb_set(payload, '{layout,imageLayout}', '"grid6"')
+        WHERE payload->'layout'->>'imageLayout' = 'form7'`,
+    )
+    await setSetting('migrations', { ...seen, plateSix: true })
+  }
+}
+
 async function listReferrers() {
   const rows = await q(
     `SELECT DISTINCT trim(referred_by) AS v
@@ -1026,6 +1079,7 @@ module.exports = {
   getPatient,
   listPatients,
   listReferrers,
+  listFieldHistory,
   listProcedureLabels,
   rememberProcedureLabel,
   deletePatient,

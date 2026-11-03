@@ -537,6 +537,23 @@ check(
 
 /* The band across the form has to name the procedure that was selected, or two
    different studies look identical in the patient's file. */
+/* Image Plus must print four, six, seven or eight pictures on one A4 sheet. */
+const eightPics = Array.from({ length: 8 }, (_, i) => ({ id: `ip${i}`, kind: 'image', caption: `Picture ${i + 1}` }))
+const eightModel = buildReportModel(hospitalPatient, { ...hospitalProcedure, media: eightPics }, hospitalTemplate)
+for (const n of [4, 6, 7, 8]) {
+  const sheet = buildImagePlusHtml(eightModel, { count: n, images: eightPics })
+  const figures = (sheet.match(/<figure>/g) || []).length
+  check(
+    `Image Plus prints ${n} pictures on one sheet`,
+    figures === n && sheet.includes(`IMAGE PLUS — ${n} PICTURES`),
+    `figures=${figures}`,
+  )
+}
+
+/* Six pictures is the house default when a report has never chosen a layout. */
+check('plate defaults to six pictures', imageLayoutDef(undefined).id === 'grid6')
+check('an explicit layout still wins', imageLayoutDef('grid4').id === 'grid4')
+
 const bandFor = (testName) =>
   buildReportModel(hospitalPatient, { ...hospitalProcedure, testName }, hospitalTemplate).hospital.title
 
