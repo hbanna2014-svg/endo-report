@@ -640,17 +640,32 @@ const withDevice = buildConstraintStages('cam-1', want4k)
 const withoutDevice = buildConstraintStages('', want4k)
 console.log(`  device stages: ${withDevice.length}, no-device stages: ${withoutDevice.length}`)
 
-check('a chosen device gets four progressively looser stages', withDevice.length === 4)
+check('a chosen device gets a full ladder of fallbacks', withDevice.length >= 9, `got ${withDevice.length}`)
 check('stage 1 asks for the device and the wanted size', withDevice[0].deviceId?.exact === 'cam-1' && withDevice[0].width?.ideal === 3840)
 check('stage 2 drops the size so the driver picks its own mode', withDevice[1].deviceId?.exact === 'cam-1' && withDevice[1].width === undefined)
-check('stage 3 drops "exact"', withDevice[2].deviceId === 'cam-1' && withDevice[2].deviceId?.exact === undefined)
-check('stage 4 falls back to any camera', withDevice[3].deviceId === undefined && withDevice[3].width?.ideal === 3840)
-check('no device selected still ends with a bare request', withoutDevice.length === 2 && withoutDevice[1] === true)
+check(
+  'the ladder walks PAL 720×576 explicitly',
+  withDevice.some((s) => s.width?.exact === 720 && s.height?.exact === 576),
+)
+check(
+  'the ladder walks NTSC 720×480 explicitly',
+  withDevice.some((s) => s.width?.exact === 720 && s.height?.exact === 480),
+)
+check(
+  'a soft device hint is offered before giving up on the device',
+  withDevice.some((s) => s.deviceId === 'cam-1' && s.deviceId?.exact === undefined),
+)
+check('the last stage falls back to any camera', withDevice[withDevice.length - 1].deviceId === undefined)
+check(
+  'no device selected still asks for any camera at the wanted size',
+  withoutDevice.length === 1 && withoutDevice[0].width?.ideal === 3840 && withoutDevice[0].deviceId === undefined,
+)
 
 const busyErr = describeMediaError(Object.assign(new Error('x'), { name: 'NotReadableError' }))
 const constrainedErr = describeMediaError(Object.assign(new Error('x'), { name: 'OverconstrainedError' }))
 console.log(`  NotReadableError -> ${busyErr.slice(0, 60)}…`)
-check('NotReadableError explains that another program holds the card', /another program/i.test(busyErr))
+check('NotReadableError explains that another program holds the card', /other program/i.test(busyErr))
+check('NotReadableError offers the DirectShow fallback', /DirectShow/i.test(busyErr))
 check('OverconstrainedError points at PAL 720×576', /PAL/.test(constrainedErr))
 
 /* ========================================================================== */
@@ -685,6 +700,43 @@ check(
   tall.width === 400 && tall.height <= 900 && Math.abs(tall.width / tall.height - 1080 / 1430) < 0.02,
   JSON.stringify(tall),
 )
+
+/* ========================================================================== */
+console.log('\n=== 9. Image plate fills the page ===\n')
+
+const { plateGeometry, dominantAspect } = await import('../src/lib/plateGeometry.js')
+
+// The A4 box the Image Plus sheet leaves for pictures.
+const PAGE = { widthMm: 192, heightMm: 240, gapX: 4, gapY: 4 }
+
+for (const count of [4, 6, 7, 8]) {
+  const g = plateGeometry({ count, aspect: 4 / 3, ...PAGE })
+  const area = (count * g.cellW * g.cellH) / (PAGE.widthMm * PAGE.heightMm)
+  console.log(
+    `  ${count} pictures -> ${g.cols} x ${g.rows}, cell ${g.cellW.toFixed(1)} x ${g.cellH.toFixed(1)} mm, ` +
+      `block ${g.blockW.toFixed(1)} x ${g.blockH.toFixed(1)} mm, covers ${(area * 100).toFixed(0)}%`,
+  )
+  check(`${count} pictures fit inside the page`, g.blockW <= PAGE.widthMm + 0.01 && g.blockH <= PAGE.heightMm + 0.01, JSON.stringify(g))
+  check(`${count} pictures cover more than half the page`, area > 0.5, `${(area * 100).toFixed(0)}%`)
+  check(`${count} pictures use a bigger cell than the old 55.88 mm plate`, g.cellW > 55.88 || g.cellH > 50.8)
+}
+
+check('six pictures become a 2 x 3 block', plateGeometry({ count: 6, aspect: 4 / 3, ...PAGE }).cols === 2)
+check('eight pictures become a 2 x 4 block', plateGeometry({ count: 8, aspect: 4 / 3, ...PAGE }).rows === 4)
+check('four pictures become a 2 x 2 block', plateGeometry({ count: 4, aspect: 4 / 3, ...PAGE }).cols === 2)
+check(
+  'a single picture is not enlarged past the page',
+  (() => {
+    const g = plateGeometry({ count: 1, aspect: 4 / 3, ...PAGE })
+    return g.blockW <= PAGE.widthMm + 0.01 && g.blockH <= PAGE.heightMm + 0.01
+  })(),
+)
+check(
+  'portrait frames use more columns than landscape ones',
+  plateGeometry({ count: 6, aspect: 1080 / 1430, ...PAGE }).cols >= plateGeometry({ count: 6, aspect: 4 / 3, ...PAGE }).cols,
+)
+check('the aspect is taken from the first sized picture', dominantAspect([{ width: 1080, height: 1430 }]) === 1080 / 1430)
+check('an unsized picture falls back to 4:3', dominantAspect([{}]) === 4 / 3)
 
 /* ========================================================================== */
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}\n`)

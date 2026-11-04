@@ -571,6 +571,31 @@ a { color: var(--brand); }
 }
 .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; animation: pulse 1.2s infinite; }
 
+/* Click-to-capture: the whole picture is the shutter release. */
+.capture-stage.clickable { cursor: crosshair; }
+.capture-stage.clickable:active { transform: scale(.998); }
+.capture-hint {
+  position: absolute; left: 9px; bottom: 9px; display: inline-flex; align-items: center; gap: 5px;
+  background: rgba(2, 6, 23, .62); color: #cbd5e1; font-size: 10.5px; font-weight: 550;
+  padding: 3px 8px; border-radius: 999px; letter-spacing: .2px; backdrop-filter: blur(3px);
+  opacity: 0; transform: translateY(3px); transition: opacity .16s ease, transform .16s ease;
+  pointer-events: none;
+}
+.capture-stage.clickable:hover .capture-hint { opacity: 1; transform: translateY(0); }
+.capture-flash {
+  position: absolute; inset: 0; background: #fff; pointer-events: none;
+  animation: shutter .22s ease-out forwards;
+}
+@keyframes shutter {
+  from { opacity: .85; }
+  to { opacity: 0; }
+}
+
+/* The scope-button learn mode: the control pulses so it is obvious that a
+   key press is being waited for. */
+.scope-learning .select,
+.scope-learning .btn { box-shadow: 0 0 0 2px rgba(56, 189, 248, .55); animation: pulse 1.1s infinite; }
+
 .stage-under { display: flex; align-items: center; gap: 10px; padding: 0 2px; }
 
 /* -------------------------------------------------------------- media rail --- */

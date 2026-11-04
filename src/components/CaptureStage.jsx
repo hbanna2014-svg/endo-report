@@ -11,9 +11,9 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react'
-import { Camera, MonitorOff, Play, RefreshCw, Square, Video, Settings2, RotateCw } from 'lucide-react'
+import { Camera, MonitorOff, Play, RefreshCw, Square, Video, Settings2, RotateCw, MousePointerClick } from 'lucide-react'
 
-import { CAPTURE_QUALITY, fmtDuration } from '../lib/useCapture.js'
+import { CAPTURE_KEY_OPTIONS, CAPTURE_QUALITY, fmtDuration } from '../lib/useCapture.js'
 import { ROTATION_OPTIONS, fitWithin, rotatedSize, rotationBadge } from '../lib/frameRotation.js'
 import { Button, Chip, Field, Select } from './ui.jsx'
 
@@ -41,6 +41,7 @@ function useElementSize(ref) {
 export default function CaptureStage({ cap, activeSection, onSelectSection, compact = false, showDevicePicker = true }) {
   const {
     videoRef,
+    attachVideo,
     devices,
     deviceId,
     setDeviceId,
@@ -64,7 +65,16 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
     refreshDevices,
     startStream,
     stopStream,
-    captureStill,
+    captureFromButton,
+    flash,
+    deviceBusy,
+    captureEngine,
+    canSwitchEngine,
+    switchCaptureEngine,
+    captureKey,
+    setCaptureKey,
+    learningKey,
+    beginLearnCaptureKey,
     startRecording,
     stopRecording,
   } = cap
@@ -91,6 +101,19 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
   }
 
   const megapixels = frameSize ? ((frameSize.width * frameSize.height) / 1e6).toFixed(1) : null
+
+  /**
+   * Clicking anywhere on the live picture takes a still.
+   *
+   * This is also how a processor behaves when its capture button emulates a
+   * mouse click: the click lands on whatever is under the pointer, which
+   * during a procedure is this stage.
+   */
+  const handleStageClick = (event) => {
+    if (!live || busy) return
+    if (event.target.closest('button, a, select, input, textarea')) return
+    captureFromButton()
+  }
 
   /* A one-click quarter turn: the fastest way out of a sideways picture, and
      the choice is remembered for the next patient. */
@@ -154,9 +177,29 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
               <Button size="sm" icon={RefreshCw} onClick={refreshDevices}>
                 Rescan devices
               </Button>
+              {canSwitchEngine ? (
+                <Button
+                  size="sm"
+                  variant={deviceBusy ? 'warn' : 'ghost'}
+                  icon={MonitorOff}
+                  onClick={() => switchCaptureEngine(captureEngine === 'directshow' ? 'default' : 'directshow')}
+                  title={
+                    captureEngine === 'directshow'
+                      ? 'Go back to the standard Windows driver (Media Foundation)'
+                      : 'Older capture cards only start on the DirectShow driver. EndoReport will restart.'
+                  }
+                >
+                  {captureEngine === 'directshow' ? 'Back to standard driver' : 'Restart with DirectShow'}
+                </Button>
+              ) : null}
               <span className="tiny muted">
-                Tip: most “could not start video source” errors clear as soon as the other program releases the card.
+                {deviceBusy
+                  ? 'Closing the other program that holds the card is what usually fixes this. If it still fails, switch driver.'
+                  : 'Tip: most “could not start video source” errors clear as soon as the other program releases the card.'}
               </span>
+            </div>
+            <div className="tiny muted" style={{ marginTop: 6 }}>
+              Driver: {captureEngine === 'directshow' ? 'DirectShow (compatibility)' : 'Windows Media Foundation'}
             </div>
           </div>
         </div>
@@ -164,9 +207,14 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
 
       {/* The stage is the measuring frame; .stage-fit inside it is the picture,
           sized so that the entire frame is visible without cropping. */}
-      <div className="capture-stage" ref={stageRef}>
+      <div
+        className={`capture-stage${live ? ' clickable' : ''}${flash ? ' flash' : ''}`}
+        ref={stageRef}
+        onClick={handleStageClick}
+        title={live ? 'Click the picture to capture an image' : undefined}
+      >
         <div className="stage-fit" style={box ? { width: box.width, height: box.height } : { width: '100%', height: '100%' }}>
-          <video ref={videoRef} playsInline muted style={videoStyle} />
+          <video ref={attachVideo || videoRef} playsInline muted style={videoStyle} />
         </div>
 
         {!live ? (
@@ -195,6 +243,15 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
             REC {fmtDuration(recSeconds)}
           </span>
         ) : null}
+
+        {live && !recording && !busy ? (
+          <span className="capture-hint">
+            <MousePointerClick size={12} /> Click the picture to capture
+          </span>
+        ) : null}
+
+        {/* The flash is what makes a click feel like a shutter release. */}
+        {flash ? <span className="capture-flash" /> : null}
       </div>
 
       <div className="row wrap" style={{ gap: 8, marginTop: 10 }}>
@@ -207,7 +264,7 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
             Stop
           </Button>
         )}
-        <Button variant="success" icon={Camera} onClick={() => captureStill()} disabled={!live || busy}>
+        <Button variant="success" icon={Camera} onClick={() => captureFromButton()} disabled={!live || busy}>
           Capture image
         </Button>
         {recording ? (
@@ -264,6 +321,34 @@ export default function CaptureStage({ cap, activeSection, onSelectSection, comp
             <RotateCw size={12} />
           </button>
         </label>
+
+        {/* The endoscope's own capture button reaches Windows as a keystroke.
+            Learn listens for it once and remembers the key. */}
+        <div className={`row small${learningKey ? ' scope-learning' : ''}`} style={{ gap: 6 }}>
+          <span className="muted">Scope button</span>
+          <select
+            className="select"
+            style={{ width: 92, padding: '3px 6px', fontSize: 11.5 }}
+            value={captureKey}
+            onChange={(e) => setCaptureKey(e.target.value)}
+            title="The key the video processor sends when the capture button on the endoscope is pressed"
+          >
+            {CAPTURE_KEY_OPTIONS.map((o) => (
+              <option key={o.value || 'off'} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <Button
+            size="sm"
+            variant={learningKey ? 'primary' : 'ghost'}
+            onClick={beginLearnCaptureKey}
+            title="Press the capture button on the endoscope; EndoReport will learn the key it sends"
+          >
+            {learningKey ? 'Press the scope button…' : 'Learn'}
+          </Button>
+        </div>
+
         <span className="spacer" />
         {!showDevicePicker ? (
           <Button

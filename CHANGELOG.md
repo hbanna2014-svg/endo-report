@@ -4,6 +4,65 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.15 — 2026-11-04
+
+### Added
+
+- **The Image Plus sheet now fills the page for any number of pictures.** Four, six,
+  seven and eight frames are no longer dropped into one fixed 55.88 × 50.8 mm cell, which
+  left six pictures covering the top third of the sheet. The grid is solved for the page:
+  every column count is tried, the cells keep the picture's own aspect ratio, and the
+  arrangement that covers the most area wins. Six pictures become 2 × 3 at 94 × 70.5 mm
+  (2.3× the old area, 96% of the sheet width); eight become 2 × 4 at 76 × 57 mm; four
+  become 2 × 2 at the largest size that fits. Pictures are never cropped — a portrait page
+  simply cannot fill its height with four landscape frames, so the block is centred.
+- **Procedure, Indication and Medication are editable on the report page.** Click any of
+  the three lines on the hospital form to rewrite it; each field drops down the values the
+  clinic has used before (plus the three standard procedure lines). The lists build
+  themselves from the database, so whatever was saved while registering a patient is
+  already offered on the next report. The procedure line is stored as `procedureText`, so
+  the standard wording is still the default whenever nothing was typed.
+
+- **Click the picture to take a still.** During a procedure the live stage is the biggest
+  thing on screen, so a click anywhere on it now captures — crosshair cursor, a
+  “Click the picture to capture” hint on hover, and a short white flash when the frame is
+  taken. This also covers the processors whose capture button emulates a mouse click.
+- **The endoscope's own capture button.** Most video processors forward that button to the
+  PC as an ordinary keystroke. A new **Scope button** control in the capture toolbar learns
+  the key: press **Learn**, press the button on the scope once, and the key is saved with
+  the other capture preferences. A fixed key can also be chosen from the list (F1–F12,
+  Print Screen, Insert, Enter, Space), and **Any key** works when the processor's key is
+  not on the list. In “Any key” mode typing into a patient field never fires the camera.
+- **Capture driver switch for stubborn cards.** The error banner now names the driver in
+  use and offers **Restart with DirectShow**. Windows 10/11 opens USB video through Media
+  Foundation; older endoscopy grabbers (the LB725 class) often refuse there with
+  “Could not start video source” even when nothing else holds the device. The switch sets
+  Chromium's `MediaFoundationVideoCapture` off and restarts, which is what those cards need.
+  It is remembered per installation, and **Back to standard driver** undoes it.
+
+### Fixed
+
+- **The live picture could stay black while the console said “Camera live”.** The stage's
+  `<video>` element is re-created when the console layout changes; the stream stayed on the
+  old node, so the picture went black and every capture failed with “no video frame”. The
+  stream is now attached through a callback ref, so it follows the element and re-attaches
+  instantly after a tab switch. This was also why a capture could silently do nothing on
+  some computers.
+- **A capture card is found again after the folder is copied to another computer.** Device
+  ids are per profile, so the remembered id meant nothing on a second machine and the app
+  fell back to the first camera it saw — on a laptop, its own webcam. The device is now
+  remembered by label as well, and on a fresh machine the app prefers a device whose name
+  looks like a capture card over the built-in camera.
+- **Medication entered at registration reached the report as "N/A".** Starting a report now
+  carries both the indication and the medication from the patient record, so the
+  "Medication :" line opens with what the clinic already typed instead of an empty default.
+- **More retries before giving up on a card that is still being released.** Three spaced
+  attempts (0.5 s, 1.2 s, 2 s) instead of one, and the resolution ladder now walks PAL
+  720×576 and NTSC 720×480 explicitly, which is the mode most endoscopy processors
+  actually send. An unsupported mode is skipped immediately instead of being retried.
+
+---
+
 ## 0.5.14 — 2026-11-03
 
 ### Added

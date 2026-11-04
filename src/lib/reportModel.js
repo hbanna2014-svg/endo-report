@@ -323,7 +323,9 @@ export function buildHospitalForm(model) {
     // A name the clinic typed wins over the built-in label, so the band always
     // matches what was entered at registration.
     title: bandFromLabel(procedure.procedureLabel) || procedureBandTitle(procedure.testName),
-    procedure: procedureLine(procedure.testName),
+    // The line printed beside "Procedure :". The clinic can overwrite it on the
+    // report page itself (procedureText); until they do, it follows the test type.
+    procedure: String(procedure.procedureText || '').trim() || procedureLine(procedure.testName),
     indication: String(procedure.indication || patient.indication || '').trim() || 'N/A',
     medication: String(procedure.medication || procedure.sedation || '').trim() || 'N/A',
     findings,

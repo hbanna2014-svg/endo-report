@@ -100,6 +100,9 @@ function StartProcedureDialog({ open, patient, doctors, onClose, onStarted }) {
           assistant,
           scopeModel: scope,
           indication: patient.indication || '',
+          // Carried over so "Medication :" on the report opens with what was
+          // recorded at registration instead of "N/A".
+          medication: patient.medication || '',
           status: 'draft',
           ...(dual ? { procedureLabel: dualNames[types.indexOf(type)] } : {}),
         }
@@ -512,6 +515,7 @@ export default function PatientList({ doctors, onOpenProcedure, onGoToWorkspace,
                 procedureDate: opts.procedureDate,
                 performingDoctor: patient.performingDoctor || '',
                 indication: patient.indication || '',
+                medication: patient.medication || '',
                 bed: opts.bed || 'OPD',
                 status: 'draft',
                 // The name the clinic typed, printed on the report band.

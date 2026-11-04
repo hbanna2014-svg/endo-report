@@ -34,6 +34,54 @@ let startupReport = null
 const APP_VERSION = require('../package.json').version
 const PKG = require('../package.json')
 
+/* -------------------------------------------------------------------------- */
+/* Capture engine                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Which Windows driver stack opens the capture card.
+ *
+ * Chromium on Windows 10/11 opens USB video through Media Foundation. Modern
+ * cards are fine with that, but the older endoscopy grabbers (the LB725 class)
+ * frequently refuse every request there and answer "Could not start video
+ * source" even when no other program holds the device. Disabling the
+ * MediaFoundationVideoCapture feature switches Chromium to DirectShow, which
+ * those cards were built for.
+ *
+ * The choice has to be applied before the app is ready, and the setting cannot
+ * live in the database (the database is opened after the windows are created),
+ * so it is kept in a small JSON file in the user-data folder.
+ */
+function captureEngineFile() {
+  return path.join(app.getPath('userData'), 'capture-engine.json')
+}
+
+function readCaptureEngine() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(captureEngineFile(), 'utf8'))
+    return saved?.engine === 'directshow' ? 'directshow' : 'default'
+  } catch {
+    return 'default'
+  }
+}
+
+const CAPTURE_ENGINE = readCaptureEngine()
+
+if (process.platform === 'win32' && CAPTURE_ENGINE === 'directshow') {
+  app.commandLine.appendSwitch('disable-features', 'MediaFoundationVideoCapture')
+}
+
+function writeCaptureEngine(engine) {
+  const value = engine === 'directshow' ? 'directshow' : 'default'
+  fs.mkdirSync(path.dirname(captureEngineFile()), { recursive: true })
+  fs.writeFileSync(
+    captureEngineFile(),
+    JSON.stringify({ engine: value, savedAt: new Date().toISOString() }, null, 2),
+    'utf8',
+  )
+  return value
+}
+
 /** GitHub repository used for update checks and release downloads. */
 function updateRepo() {
   const pub = Array.isArray(PKG.build?.publish) ? PKG.build.publish[0] : null
@@ -949,8 +997,31 @@ function registerIpc() {
     dataDir,
     platform: process.platform,
     isDev,
+    captureEngine: CAPTURE_ENGINE,
     ai: { encryptionAvailable: safeStorage.isEncryptionAvailable() },
   }))
+  handle('app:captureEngine', async () => ({
+    engine: CAPTURE_ENGINE,
+    platform: process.platform,
+    canSwitch: process.platform === 'win32',
+    note:
+      CAPTURE_ENGINE === 'directshow'
+        ? 'DirectShow driver (compatibility mode for older capture cards).'
+        : 'Automatic — Windows Media Foundation.',
+  }))
+  handle('app:setCaptureEngine', async (engine) => {
+    const value = writeCaptureEngine(engine)
+    return { engine: value, restartRequired: value !== CAPTURE_ENGINE }
+  })
+  handle('app:relaunch', async () => {
+    // Relaunch has to happen after the IPC reply is delivered, otherwise the
+    // renderer is torn down before it can show the “restarting” state.
+    setTimeout(() => {
+      app.relaunch()
+      app.exit(0)
+    }, 120)
+    return true
+  })
   handle('app:openDataDir', async () => shell.openPath(dataDir))
   handle('app:openPath', async (target) => shell.openPath(target))
   handle('app:revealPath', async (target) => {

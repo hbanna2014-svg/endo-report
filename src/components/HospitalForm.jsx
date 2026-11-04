@@ -12,9 +12,10 @@
  *   • the doctor's signature stamp above the name.
  */
 
-import React, { useLayoutEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ImagePlus, Replace, Trash2, ArrowLeft, ArrowRight } from 'lucide-react'
 
+import { api } from '../lib/api.js'
 import { useThumbs } from './ReportPlate.jsx'
 import RichFindings from './RichFindings.jsx'
 
@@ -24,7 +25,7 @@ const SHEET_H = 297 * MM
 
 /* -------------------------------------------------------------------------- */
 
-function InlineField({ value, editable, onChange, placeholder, className = '' }) {
+function InlineField({ value, editable, onChange, placeholder, className = '', listId }) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(value || '')
 
@@ -49,6 +50,10 @@ function InlineField({ value, editable, onChange, placeholder, className = '' })
     <input
       className={`hf-input ${className}`}
       autoFocus
+      // A datalist gives the dropdown the clinic asked for without changing the
+      // printed look: the field stays a line of text, and the saved values are
+      // one click away.
+      list={listId}
       value={text}
       onChange={(e) => setText(e.target.value)}
       onBlur={() => {
@@ -129,6 +134,34 @@ export default function HospitalForm({
   const pictures = f ? [...f.top, ...f.side] : []
   const thumbs = useThumbs(pictures, 520)
 
+  /* Everything ever typed into these three boxes, so the dropdown offers the
+     clinic's own wording. The list grows by itself: a value saved while
+     registering a patient is already in the table by the time the report opens. */
+  const [saved, setSaved] = useState({})
+  useEffect(() => {
+    if (!editable) return undefined
+    let alive = true
+    api.patients
+      .fieldHistory()
+      .then((h) => {
+        if (alive) setSaved(h || {})
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [editable])
+
+  const uniq = (...lists) => [...new Set(lists.flat().map((v) => String(v || '').trim()).filter(Boolean))]
+
+  const procedureOptions = uniq(
+    ['UPPER G.I. TRACT ENDOSCOPY.', 'COLONOSCOPY.', 'UPPER G.I. TRACT ENDOSCOPY & COLONOSCOPY.'],
+    saved.procedureText,
+    saved.procedureLabel,
+  )
+  const indicationOptions = uniq(saved.indication, saved.procedureIndication)
+  const medicationOptions = uniq(saved.medication, saved.procedureMedication)
+
   const viewport = useRef(null)
   const notesRef = useRef(null)
   const onFieldRef = useRef(onField)
@@ -170,6 +203,24 @@ export default function HospitalForm({
 
   return (
     <div className="hf-viewport" ref={viewport} style={{ height: SHEET_H * scale }}>
+      {/* Dropdown values for the three editable lines. A datalist renders
+          nothing by itself, so the paper form stays exactly as it prints. */}
+      <datalist id="hf-dl-procedure">
+        {procedureOptions.map((v) => (
+          <option key={v} value={v} />
+        ))}
+      </datalist>
+      <datalist id="hf-dl-indication">
+        {indicationOptions.map((v) => (
+          <option key={v} value={v} />
+        ))}
+      </datalist>
+      <datalist id="hf-dl-medication">
+        {medicationOptions.map((v) => (
+          <option key={v} value={v} />
+        ))}
+      </datalist>
+
       <div
         className="hf-sheet"
         ref={reference}
@@ -261,15 +312,37 @@ export default function HospitalForm({
           <div className="hf-cols">
             <div className="hf-left">
               <p className="hf-line">
-                <span className="hf-lbl">Procedure :</span> <span className="hf-val">{f.procedure}</span>
+                <span className="hf-lbl">Procedure :</span>{' '}
+                <InlineField
+                  className="hf-val"
+                  value={f.procedure}
+                  editable={editable}
+                  onChange={field('procedure', 'procedureText')}
+                  placeholder="N/A"
+                  listId="hf-dl-procedure"
+                />
               </p>
               <p className="hf-line">
                 <span className="hf-lbl">Indication :</span>{' '}
-                <InlineField className="hf-val" value={f.indication} editable={editable} onChange={field('procedure', 'indication')} placeholder="N/A" />
+                <InlineField
+                  className="hf-val"
+                  value={f.indication}
+                  editable={editable}
+                  onChange={field('procedure', 'indication')}
+                  placeholder="N/A"
+                  listId="hf-dl-indication"
+                />
               </p>
               <p className="hf-line">
                 <span className="hf-lbl">Medication :</span>{' '}
-                <InlineField className="hf-val" value={f.medication} editable={editable} onChange={field('procedure', 'medication')} placeholder="N/A" />
+                <InlineField
+                  className="hf-val"
+                  value={f.medication}
+                  editable={editable}
+                  onChange={field('procedure', 'medication')}
+                  placeholder="N/A"
+                  listId="hf-dl-medication"
+                />
               </p>
 
               {/* When the operator brings their own Word report, the generated

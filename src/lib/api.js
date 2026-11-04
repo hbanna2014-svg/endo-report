@@ -32,6 +32,9 @@ export const api = {
     chooseDirectory: guard(bridge?.app?.chooseDirectory, 'app.chooseDirectory'),
     readFileAsDataUrl: guard(bridge?.app?.readFileAsDataUrl, 'app.readFileAsDataUrl'),
     copyText: guard(bridge?.app?.saveClipboardText, 'app.copyText'),
+    captureEngine: guard(bridge?.app?.captureEngine, 'app.captureEngine'),
+    setCaptureEngine: guard(bridge?.app?.setCaptureEngine, 'app.setCaptureEngine'),
+    relaunch: guard(bridge?.app?.relaunch, 'app.relaunch'),
     onMenu: (handler) => (bridge?.system?.onMenu ? bridge.system.onMenu(handler) : () => {}),
   },
   patients: {

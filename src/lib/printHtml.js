@@ -6,6 +6,8 @@
  * supplied as data URLs on `model.media[].dataUrl`.
  */
 
+import { dominantAspect, plateGeometry } from './plateGeometry.js'
+
 function esc(v) {
   return String(v === undefined || v === null ? '' : v)
     .replace(/&/g, '&amp;')
@@ -621,8 +623,21 @@ export function buildImagePlusHtml(model, options = {}) {
   const count = ALLOWED.includes(requested) ? requested : 4
   const chosen = (options.images || model.media || []).filter((m) => m.kind === 'image').slice(0, count)
   const font = (model.template.layout || {}).fontFamily || 'Arial'
-  const cols = 2
-  const rows = Math.ceil(count / cols)
+
+  /* Four, six, seven and eight pictures all have to reach the edges of the
+     sheet. The grid is solved for the page instead of using one fixed cell, so
+     six pictures become 2 × 3 at the largest size that fits rather than six
+     small frames in the top third. */
+  const g = plateGeometry({
+    count,
+    aspect: dominantAspect(chosen),
+    widthMm: 192,
+    heightMm: 240,
+    gapX: 4,
+    gapY: 4,
+    maxCols: 4,
+  })
+  const px = (mm) => `${mm.toFixed(2)}mm`
 
   const cells = Array.from({ length: count })
     .map((_, i) => {
@@ -674,11 +689,11 @@ export function buildImagePlusHtml(model, options = {}) {
   td.v2 { width: 35.5%; }
   .band { border-top: 1.3px solid #000; border-bottom: 1.3px solid #000; margin-top: 1.6mm; padding: 1mm 0 .9mm; text-align: center; }
   .band h1 { margin: 0; font-size: 11.5pt; font-weight: 700; letter-spacing: .34em; text-indent: .34em; }
-  .plate { flex: 1 1 auto; display: grid; grid-template-columns: repeat(${cols}, 55.88mm); grid-auto-rows: 50.8mm; justify-content: center; align-content: start; gap: 6mm 8mm; margin-top: 4mm; }
+  .plate { flex: 1 1 auto; display: grid; grid-template-columns: repeat(${g.cols}, ${px(g.cellW)}); grid-auto-rows: ${px(g.cellH)}; justify-content: center; align-content: center; gap: 4mm; margin-top: 2mm; }
   figure { margin: 0; }
-  figure img { display: block; width: 55.88mm; height: 50.8mm; object-fit: contain; object-position: center; background: #fff; border: .8px solid #000; }
+  figure img { display: block; width: ${px(g.cellW)}; height: ${px(g.cellH)}; object-fit: contain; object-position: center; background: #fff; border: .8px solid #000; }
   figcaption { text-align: center; font-size: 6.6pt; margin-top: .8mm; }
-  .noimg { display: flex; align-items: center; justify-content: center; width: 55.88mm; height: 50.8mm; background: #eef3f7; color: #6b7280; font-size: 6.8pt; border: 1px solid #cbd5e1; }
+  .noimg { display: flex; align-items: center; justify-content: center; width: ${px(g.cellW)}; height: ${px(g.cellH)}; background: #eef3f7; color: #6b7280; font-size: 6.8pt; border: 1px solid #cbd5e1; }
 </style>
 </head>
 <body>

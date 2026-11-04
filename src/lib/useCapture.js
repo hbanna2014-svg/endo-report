@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api } from './api.js'
-import { buildConstraintStages, describeMediaError } from './captureConstraints.js'
+import { buildConstraintStages, describeMediaError, isDeviceBusy } from './captureConstraints.js'
 import { effectiveRotation, rotateCanvas } from './frameRotation.js'
 import { sectionsForProcedure } from './anatomy.js'
 import { useToast } from '../components/ui.jsx'
@@ -120,6 +120,50 @@ export function fmtDuration(sec) {
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
 }
 
+/* -------------------------------------------------------------------------- */
+/* Scope capture button                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Keys offered for the endoscope's own capture button.
+ *
+ * Most video processors with a keyboard port (Olympus, Pentax, Fujifilm, and
+ * the generic Chinese processors built around them) send an ordinary key press
+ * to the PC when the button on the scope is pressed — usually F1/F2 or a
+ * multimedia key. Windows cannot see that press any other way, so the clinic
+ * teaches the app which key its processor sends.
+ */
+export const CAPTURE_KEY_OPTIONS = [
+  { value: '', label: 'Off' },
+  { value: 'any', label: 'Any key' },
+  { value: 'F1', label: 'F1' },
+  { value: 'F2', label: 'F2' },
+  { value: 'F3', label: 'F3' },
+  { value: 'F4', label: 'F4' },
+  { value: 'F5', label: 'F5' },
+  { value: 'F6', label: 'F6' },
+  { value: 'F7', label: 'F7' },
+  { value: 'F8', label: 'F8' },
+  { value: 'F9', label: 'F9' },
+  { value: 'F10', label: 'F10' },
+  { value: 'F11', label: 'F11' },
+  { value: 'F12', label: 'F12' },
+  { value: 'PrintScreen', label: 'Print Screen' },
+  { value: 'Insert', label: 'Insert' },
+  { value: 'Enter', label: 'Enter' },
+  { value: 'Space', label: 'Space' },
+]
+
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'CapsLock', 'NumLock', 'ScrollLock', 'Dead', 'Unidentified'])
+
+/** True when the keystroke belongs to a text field, so "Any key" must not fire. */
+function isTypingTarget(target) {
+  if (!target || !target.tagName) return false
+  const tag = target.tagName.toLowerCase()
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true
+  return target.isContentEditable === true
+}
+
 export default function useCapture({
   patientId,
   procedureId,
@@ -155,6 +199,17 @@ export default function useCapture({
   // 'auto' | 0 | 90 | 180 | 270 — a capture card that hands over a portrait
   // buffer makes the picture look sideways; this turns it back.
   const [rotation, setRotation] = useState('auto')
+  // '' = off, 'any' = any key, otherwise an event.key such as "F2".
+  const [captureKey, setCaptureKey] = useState('')
+  const [learningKey, setLearningKey] = useState(false)
+  // Remembered by label as well as id: the deviceId changes when the portable
+  // folder is copied to another computer, the label ("LB725 Video Device") does not.
+  const [deviceLabel, setDeviceLabel] = useState('')
+  // True when the card exists but Windows refused to start it — the only case
+  // where switching to the DirectShow driver can help.
+  const [deviceBusy, setDeviceBusy] = useState(false)
+  const [captureEngine, setCaptureEngine] = useState('default')
+  const [canSwitchEngine, setCanSwitchEngine] = useState(false)
   const [prefsLoaded, setPrefsLoaded] = useState(false)
   const [lastCaptured, setLastCaptured] = useState(null)
   const [frameSize, setFrameSize] = useState(null)
@@ -181,6 +236,8 @@ export default function useCapture({
           if (saved.quality) setQuality(saved.quality)
           if (typeof saved.trimBlack === 'boolean') setTrimBlack(saved.trimBlack)
           if (typeof saved.autoCaption === 'boolean') setAutoCaption(saved.autoCaption)
+          if (typeof saved.captureKey === 'string') setCaptureKey(saved.captureKey)
+          if (saved.deviceLabel) setDeviceLabel(saved.deviceLabel)
           if (saved.deviceId) setDeviceId((cur) => cur || saved.deviceId)
         }
         setPrefsLoaded(true)
@@ -193,8 +250,8 @@ export default function useCapture({
 
   useEffect(() => {
     if (!prefsLoaded) return
-    api.settings.set('capture', { rotation, quality, trimBlack, autoCaption, deviceId }).catch(() => {})
-  }, [prefsLoaded, rotation, quality, trimBlack, autoCaption, deviceId])
+    api.settings.set('capture', { rotation, quality, trimBlack, autoCaption, captureKey, deviceId, deviceLabel }).catch(() => {})
+  }, [prefsLoaded, rotation, quality, trimBlack, autoCaption, captureKey, deviceId, deviceLabel])
 
   const refreshDevices = useCallback(async () => {
     try {
@@ -205,17 +262,55 @@ export default function useCapture({
       const list = await navigator.mediaDevices.enumerateDevices()
       const cams = list.filter((d) => d.kind === 'videoinput')
       setDevices(cams)
-      setDeviceId((cur) => cur || cams[0]?.deviceId || '')
+      setDeviceId((cur) => {
+        if (cur && cams.some((c) => c.deviceId === cur)) return cur
+        // The saved id can be stale: device ids are per profile, so a portable
+        // folder copied to another computer has to find its card by name.
+        const wanted = (deviceLabel || '').trim().toLowerCase()
+        if (wanted) {
+          const exact = cams.find((c) => (c.label || '').trim().toLowerCase() === wanted)
+          const loose = cams.find((c) => (c.label || '').toLowerCase().includes(wanted))
+          if (exact || loose) return (exact || loose).deviceId
+        }
+        // Prefer a capture card over the laptop's own webcam on a fresh machine.
+        const grabber = cams.find((c) =>
+          /capture|grabber|video device|hdmi|usb video|endoscop|\blb\d|ezcap|avermedia|elgato|magewell|dazzle/i.test(c.label || ''),
+        )
+        return grabber?.deviceId || cams[0]?.deviceId || ''
+      })
     } catch (err) {
       setError(err.message)
     }
-  }, [])
+  }, [deviceLabel])
 
   useEffect(() => {
     refreshDevices()
     navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices)
     return () => navigator.mediaDevices?.removeEventListener?.('devicechange', refreshDevices)
   }, [refreshDevices])
+
+  /**
+   * A callback ref for the <video> element.
+   *
+   * The console re-creates that element when its layout changes, and a plain
+   * ref leaves the new node empty while the hook still reports "live": the
+   * picture goes black and every capture fails with "no video frame". Attaching
+   * the stream whenever the node appears keeps the picture on screen across
+   * re-mounts, and re-attaches the warm stream instantly after a tab switch.
+   */
+  const attachVideo = useCallback((node) => {
+    videoRef.current = node
+    if (!node) return
+    const stream = streamRef.current || (streamIsLive(warm.stream) ? warm.stream : null)
+    if (!stream) return
+    if (node.srcObject !== stream) {
+      node.srcObject = stream
+      void node.play().catch(() => {})
+    }
+    setLive(true)
+    const settings = stream.getVideoTracks()[0]?.getSettings?.()
+    if (settings?.width) setFrameSize({ width: settings.width, height: settings.height })
+  }, [])
 
   const stopStream = useCallback(() => {
     if (streamRef.current) {
@@ -263,8 +358,13 @@ export default function useCapture({
    */
   const openStream = useCallback(async (stages) => {
     let lastErr = null
+    // A card that another program has just let go of needs a moment before the
+    // driver will hand it over; three spaced retries cover that without making
+    // a genuinely absent device take long to report.
+    const retryDelays = [500, 1200, 2000]
+
     for (let i = 0; i < stages.length; i += 1) {
-      for (let attempt = 0; attempt < 2; attempt += 1) {
+      for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
         try {
           // eslint-disable-next-line no-await-in-loop
           const stream = await navigator.mediaDevices.getUserMedia({ video: stages[i], audio: false })
@@ -273,10 +373,12 @@ export default function useCapture({
           lastErr = err
           // A permission refusal will not improve by trying other constraints.
           if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError') throw err
-          // The card may still be releasing itself — give it one short pause.
-          if (err?.name === 'NotReadableError' && attempt === 0) {
+          // Overconstrained means this mode is wrong for the card: move on at once.
+          if (err?.name === 'OverconstrainedError' || err?.name === 'ConstraintNotSatisfiedError') break
+          // Anything else that means "would not start" gets one more pause.
+          if (attempt < retryDelays.length) {
             // eslint-disable-next-line no-await-in-loop
-            await new Promise((r) => setTimeout(r, 650))
+            await new Promise((r) => setTimeout(r, retryDelays[attempt]))
             continue
           }
           break
@@ -288,6 +390,7 @@ export default function useCapture({
 
   const startStream = useCallback(async () => {
     setError('')
+    setDeviceBusy(false)
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         setError('This computer did not give the app access to a camera or capture card.')
@@ -334,9 +437,51 @@ export default function useCapture({
       }
     } catch (err) {
       stopStream()
+      setDeviceBusy(isDeviceBusy(err))
       setError(describeMediaError(err))
     }
   }, [deviceId, openStream, quality, refreshDevices, stopStream, toast])
+
+  /* Which Windows driver stack this run is using. Shown next to the error so a
+     failed open can be traced to Media Foundation instead of to the card. */
+  useEffect(() => {
+    let alive = true
+    api.app
+      .captureEngine()
+      .then((res) => {
+        if (!alive) return
+        setCaptureEngine(res?.engine === 'directshow' ? 'directshow' : 'default')
+        setCanSwitchEngine(!!res?.canSwitch)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  /** Saves the driver choice and restarts, so a stubborn card can be retried. */
+  const switchCaptureEngine = useCallback(
+    async (engine) => {
+      try {
+        const res = await api.app.setCaptureEngine(engine)
+        setCaptureEngine(res?.engine === 'directshow' ? 'directshow' : 'default')
+        if (res?.restartRequired) await api.app.relaunch()
+        return res
+      } catch (err) {
+        toast.push({ tone: 'err', title: 'Could not change the capture driver', body: err.message })
+        return null
+      }
+    },
+    [toast],
+  )
+
+  /* Keep the remembered device name in step with the picked device, so the card
+     can still be found after the folder is copied to another computer. */
+  useEffect(() => {
+    if (!devices.length) return
+    const picked = devices.find((d) => d.deviceId === deviceId)
+    if (picked?.label && picked.label !== deviceLabel) setDeviceLabel(picked.label)
+  }, [deviceId, devices, deviceLabel])
 
   useEffect(() => {
     if (!autoStart) return
@@ -433,6 +578,94 @@ export default function useCapture({
     [activeSection, autoCaption, live, onCaptured, patientId, procedureId, rotation, sectionLabel, setMedia, toast, trimBlack],
   )
 
+  /* ------------------------------------------- scope capture button ------- */
+
+  const lastTrigger = useRef(0)
+  const learnTimer = useRef(0)
+  const flashTimer = useRef(0)
+  const [flash, setFlash] = useState(false)
+
+  /** A single short white flash on the stage, so a click that captured is felt. */
+  const flashStage = useCallback(() => {
+    setFlash(true)
+    window.clearTimeout(flashTimer.current)
+    flashTimer.current = window.setTimeout(() => setFlash(false), 220)
+  }, [])
+
+  /**
+   * One entry point for every trigger — the toolbar button, a click on the
+   * picture and the key the endoscope sends. The 500 ms guard swallows the
+   * key-repeat some processors emit when the button is held.
+   */
+  const captureFromButton = useCallback(async () => {
+    const now = Date.now()
+    if (now - lastTrigger.current < 500) return null
+    lastTrigger.current = now
+    flashStage()
+    return captureStill()
+  }, [captureStill, flashStage])
+
+  const beginLearnCaptureKey = useCallback(() => {
+    setLearningKey(true)
+    window.clearTimeout(learnTimer.current)
+    learnTimer.current = window.setTimeout(() => setLearningKey(false), 15000)
+    toast.push({
+      tone: 'info',
+      title: 'Press the capture button on the endoscope',
+      body: 'Listening for the key the processor sends…',
+    })
+  }, [toast])
+
+  /**
+   * The endoscope's own capture button.
+   *
+   * Windows sees that button only as a keystroke: the processor's keyboard port
+   * forwards it as a normal key (F1/F2 on most units). Nothing in the browser
+   * API can read the button directly, so the clinic teaches the key once and it
+   * is remembered with the other capture preferences.
+   */
+  useEffect(() => {
+    if (!live) return undefined
+
+    const onKeyDown = (event) => {
+      if (event.repeat) return
+
+      if (learningKey) {
+        if (MODIFIER_KEYS.has(event.key)) return
+        event.preventDefault()
+        event.stopPropagation()
+        window.clearTimeout(learnTimer.current)
+        setCaptureKey(event.key)
+        setLearningKey(false)
+        toast.push({
+          tone: 'ok',
+          title: `Scope button set to “${event.key}”`,
+          body: 'Saved. Press the scope button again to test it.',
+        })
+        return
+      }
+
+      if (!captureKey) return
+
+      if (captureKey === 'any') {
+        if (MODIFIER_KEYS.has(event.key)) return
+        if (event.ctrlKey || event.altKey || event.metaKey) return
+        // Typing a patient's name must never fire the camera.
+        if (isTypingTarget(event.target)) return
+        void captureFromButton()
+        return
+      }
+
+      if (event.key !== captureKey) return
+      void captureFromButton()
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [live, captureKey, learningKey, captureFromButton, toast])
+
+  useEffect(() => () => window.clearTimeout(learnTimer.current), [])
+
   /* ------------------------------------------------------------- recording --- */
 
   const startRecording = useCallback(() => {
@@ -503,9 +736,21 @@ export default function useCapture({
 
   return {
     videoRef,
+    attachVideo,
     devices,
     deviceId,
     setDeviceId,
+    deviceLabel,
+    deviceBusy,
+    captureEngine,
+    canSwitchEngine,
+    switchCaptureEngine,
+    captureKey,
+    setCaptureKey,
+    learningKey,
+    beginLearnCaptureKey,
+    flash,
+    captureFromButton,
     live,
     error,
     recording,

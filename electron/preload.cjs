@@ -22,6 +22,9 @@ contextBridge.exposeInMainWorld('endoreport', {
     chooseDirectory: () => invoke('app:chooseDirectory'),
     readFileAsDataUrl: (filePath) => invoke('app:readFileAsDataUrl', filePath),
     saveClipboardText: (text) => invoke('app:saveClipboardText', text),
+    captureEngine: () => invoke('app:captureEngine'),
+    setCaptureEngine: (engine) => invoke('app:setCaptureEngine', engine),
+    relaunch: () => invoke('app:relaunch'),
   },
 
   updates: {

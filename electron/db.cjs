@@ -535,6 +535,7 @@ const HISTORY_COLUMNS = [
   ['referred_by', 'referredBy'],
   ['performing_doctor', 'performingDoctor'],
   ['indication', 'indication'],
+  ['medication', 'medication'],
 ]
 
 /**
@@ -554,6 +555,25 @@ async function listFieldHistory() {
     )
     out[key] = rows.map((r) => r.v)
   }
+
+  // The three lines the report page lets the clinic rewrite. Offering what was
+  // typed before is what makes the dropdown useful on the second patient.
+  for (const [key, outKey] of [
+    ['procedureText', 'procedureText'],
+    ['indication', 'procedureIndication'],
+    ['medication', 'procedureMedication'],
+  ]) {
+    // eslint-disable-next-line no-await-in-loop
+    const rows = await q(
+      `SELECT DISTINCT trim(payload->>'${key}') AS v
+         FROM procedures
+        WHERE COALESCE(trim(payload->>'${key}'), '') <> ''
+        ORDER BY v ASC
+        LIMIT 300`,
+    )
+    out[outKey] = rows.map((r) => r.v)
+  }
+
   return out
 }
 
