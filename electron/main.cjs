@@ -208,6 +208,18 @@ function createWindow() {
                    const want = ${JSON.stringify(label)};
                    // "css:<selector>" reaches controls with no visible text,
                    // such as the picture thumbnails in the captured rail.
+                   // "select:<selector>:<index>" picks an option in a dropdown.
+                   if (want.indexOf('select:') === 0) {
+                     const rest = want.slice(7);
+                     const cut = rest.lastIndexOf(':');
+                     const sel = cut > 0 ? rest.slice(0, cut) : rest;
+                     const idx = cut > 0 ? Number(rest.slice(cut + 1)) : 0;
+                     const node = document.querySelector(sel);
+                     if (!node) return false;
+                     node.selectedIndex = idx;
+                     node.dispatchEvent(new Event('change', { bubbles: true }));
+                     return true;
+                   }
                    if (want.indexOf('css:') === 0) {
                      const node = document.querySelector(want.slice(4));
                      if (!node) return false;

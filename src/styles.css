@@ -1757,3 +1757,18 @@ a { color: var(--brand); }
 .annot-canvas img { width: 100%; height: auto; max-height: 58vh; object-fit: contain; }
 .media-plain { width: min(100%, 900px); }
 .media-plain img { width: 100%; height: auto; }
+
+/* Capture target selector — sits at the top of the Captured strip. */
+.rail-target {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 6px 6px 7px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.rail-target select {
+  width: 100%; font-family: inherit; font-size: 11px; color: var(--ink-2);
+  padding: 3px 4px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface); cursor: pointer;
+}
+.rail-target select:focus { outline: 2px solid rgba(47, 126, 242, .25); border-color: var(--brand); }
+.rail-target-note { font-size: 10px; color: var(--ink-4); line-height: 1.3; padding-top: 1px; }

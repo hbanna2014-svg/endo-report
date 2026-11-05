@@ -26,6 +26,11 @@ export default function MediaRail({
   recording,
   recSeconds,
   busy,
+  targets = [],
+  targetId = '',
+  targetNote = '',
+  onPickTarget,
+  onPickOther,
 }) {
   const images = useMemo(() => media.filter((m) => m.kind === 'image'), [media])
   const thumbs = useThumbs(images)
@@ -37,6 +42,26 @@ export default function MediaRail({
         <span className="tiny muted">Captured</span>
         <span className="rail-count">{media.length}</span>
       </div>
+
+      {targets.length ? (
+        <div className="rail-target">
+          <label className="tiny muted" htmlFor="cap-target">Capture for</label>
+          <select
+            id="cap-target"
+            value={targetId}
+            onChange={(e) => {
+              if (e.target.value === '__other') onPickOther?.()
+              else onPickTarget?.(e.target.value)
+            }}
+          >
+            {targets.map((t) => (
+              <option key={t.procedureId} value={t.procedureId}>{t.label}</option>
+            ))}
+            <option value="__other">Other patient…</option>
+          </select>
+          {targetNote ? <div className="rail-target-note">{targetNote}</div> : null}
+        </div>
+      ) : null}
 
       <div className="rail-list">
         {media.length ? (

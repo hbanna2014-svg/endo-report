@@ -8,19 +8,20 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ### Added
 
-- **Two sessions side by side.** The workspace can hold a second, fully
-  independent pane: capture patient A while typing patient B's report, or capture
-  the colonoscopy on the right while the OGD report is finished on the left. Each
-  pane has its own patient, procedure, findings, media and camera controls; the
-  bar at the top adds a second session, swaps the two, or collapses back to one.
-  * *Second session* opens a picker: search a patient, reopen any of their
-    reports, or start a fresh one.
-  * *Endoscopy + colonoscopy, side by side* starts both reports for one patient
-    and opens them in the two panes — the same-day draft is reused instead of
-    duplicated.
-  * Only one pane can hold the capture card; starting the camera in one pane
-    releases it in the other, and closing a pane no longer kills the stream the
-    remaining pane is using.
+- **One capture console, with a target.** The *Captured* strip now carries a
+  **Capture for** selector listing this patient's exams — OGD, colonoscopy, or
+  both — plus *Other patient…* for a different patient entirely. Whichever exam
+  is chosen receives the frames; the report beside it keeps working on whatever
+  report is open.
+
+  So the real workflow is possible without a second camera window: select
+  *Colonoscopy*, capture the colon as you go, and the report on the right is the
+  endoscopy report you are finishing and printing. The strip shows the frames
+  already stored against the selected exam, the section list switches to that
+  exam's anatomy, and the note under the selector says which report is on screen.
+
+  Only one live feed ever runs. Frames captured for a different exam never land
+  on the open report's picture plate.
 
 - **Markers on captured pictures.** Every frame can carry numbered markers:
   * *Mark findings* places a marker for each finding already recorded in that

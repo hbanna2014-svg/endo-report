@@ -53,6 +53,7 @@ import { markerTypeForFinding, markerColor } from '../lib/markerTypes.js'
 
 import FindingsPanel from './FindingsPanel.jsx'
 import AnnotationEditor from './AnnotationEditor.jsx'
+import SessionPicker from './SessionPicker.jsx'
 import DetailsPanel from './DetailsPanel.jsx'
 import AuditPanel from './AuditPanel.jsx'
 import MediaRail from './MediaRail.jsx'
@@ -109,6 +110,17 @@ export default function SessionPane({
   const [procedure, setProcedure] = useState(null)
   const [patient, setPatient] = useState(null)
   const [media, setMedia] = useState([])
+  /* ---------------------------------------------------------- capture target --- */
+
+  /* Where the next frame goes. null = the report currently on screen, which is
+     the normal case. Picking another procedure here switches only the camera —
+     the report beside it keeps working on its own procedure. */
+  const [target, setTarget] = useState(null)
+  const [targetProc, setTargetProc] = useState(null)
+  const [targetMedia, setTargetMedia] = useState([])
+  const [targetSection, setTargetSection] = useState(null)
+  const [patientProcs, setPatientProcs] = useState([])
+  const [targetPicker, setTargetPicker] = useState(false)
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('console')
   const [activeSection, setActiveSection] = useState(null)
@@ -432,13 +444,60 @@ export default function SessionPane({
 
   /* ----------------------------------------------------------- capture hook --- */
 
+  const sameTarget = !target || !procedureId || target.procedureId === procedureId
+  const capId = sameTarget ? procedureId : target.procedureId
+  const capProc = sameTarget ? procedure : targetProc
+  const capMedia = sameTarget ? media : targetMedia
+  const setCapMedia = sameTarget ? setMedia : setTargetMedia
+  const capSection = sameTarget
+    ? activeSection
+    : targetSection || sectionsForProcedure(capProc?.testName)[0]?.id || null
+  const setCapSection = (id) => (sameTarget ? setActiveSection(id) : setTargetSection(id))
+
+  /* Opening another report returns the camera to it. */
+  useEffect(() => {
+    setTarget(null)
+    setTargetSection(null)
+  }, [procedureId])
+
+  /* The report's own procedures, for the target selector. */
+  useEffect(() => {
+    if (!patientId) return undefined
+    let alive = true
+    api.procedures
+      .list({ patientId, limit: 60 })
+      .then((list) => alive && setPatientProcs(list || []))
+      .catch(() => alive && setPatientProcs([]))
+    return () => {
+      alive = false
+    }
+  }, [patientId, procedureId])
+
+  /* Load the procedure the camera is pointed at, when it is not the report. */
+  useEffect(() => {
+    if (sameTarget || !capId) return undefined
+    let alive = true
+    api.procedures
+      .get(capId)
+      .then((p) => {
+        if (!alive || !p) return
+        setTargetProc(p)
+        setTargetMedia(p.media || [])
+        setTargetSection((current) => current || sectionsForProcedure(p.testName)[0]?.id || null)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [capId, sameTarget])
+
   const cap = useCapture({
-    patientId,
-    procedureId,
-    media,
-    setMedia,
-    activeSection,
-    procedure,
+    patientId: sameTarget ? patientId : target.patientId || patientId,
+    procedureId: capId,
+    media: capMedia,
+    setMedia: setCapMedia,
+    activeSection: capSection,
+    procedure: capProc,
     // Open the card as soon as the report opens, not when the operator first
     // presses Capture: the video processor needs a moment to lock its signal,
     // and paying that while the console is already on screen feels instant.
@@ -638,7 +697,8 @@ export default function SessionPane({
    */
   useEffect(() => {
     captureHandler.current = (rec) => {
-      if (!rec || !model) return
+      // Frames captured for another procedure never land on this report's plate.
+      if (!rec || !model || !sameTarget) return
       const layoutId = model.imagePlan.capacity ? model.imagePlan.mode : (procedure?.imageLayout || template?.layout?.imageLayout || 'flow')
       const def = imageLayoutDef(layoutId)
       if (!def.capacity) return // flowing layout: every picture is printed anyway
@@ -648,7 +708,7 @@ export default function SessionPane({
       next[free] = rec.id
       patch({ reportImages: next })
     }
-  }, [model, paddedIds, patch, procedure, template])
+  }, [model, paddedIds, patch, procedure, template, sameTarget])
 
   /* ----------------------------------------------------- print / export / copy --- */
 
@@ -782,21 +842,26 @@ export default function SessionPane({
 
   const importFiles = useCallback(async () => {
     try {
-      const res = await api.media.import({ patientId, procedureId, section: activeSection || null })
+      const res = await api.media.import({
+        patientId: sameTarget ? patientId : target.patientId || patientId,
+        procedureId: capId,
+        section: capSection || null,
+      })
       if (res?.ok && res.added?.length) {
-        setMedia((list) => [...list, ...res.added])
+        setCapMedia((list) => [...list, ...res.added])
         toast.push({ tone: 'ok', title: `${res.added.length} file(s) imported` })
       }
     } catch (err) {
       toast.push({ tone: 'err', title: 'Import failed', body: err.message })
     }
-  }, [activeSection, patientId, procedureId, toast])
+  }, [capId, capSection, patientId, sameTarget, setCapMedia, target, toast])
 
   const removeMedia = useCallback(
     async (item) => {
       try {
         await api.media.remove(item.id)
         setMedia((list) => list.filter((m) => m.id !== item.id))
+        setTargetMedia((list) => list.filter((m) => m.id !== item.id))
         setPreview(null)
         toast.push({ tone: 'ok', title: 'Deleted' })
       } catch (err) {
@@ -974,9 +1039,10 @@ export default function SessionPane({
      "Mark findings". Falls back to the whole study when the section is unknown. */
   const markableFindings = useCallback(
     (mediaItem) => {
-      const sections = sectionsForProcedure(procedure?.testName)
+      const owner = mediaItem?.procedureId && mediaItem.procedureId !== procedureId ? capProc : procedure
+      const sections = sectionsForProcedure(owner?.testName)
       const labelOf = Object.fromEntries(sections.map((s) => [s.id, s.label]))
-      const entries = (procedure?.entries || []).filter((e) => {
+      const entries = (owner?.entries || []).filter((e) => {
         const def = findFindingDef(e.sectionId, e.findingId)
         return def && !def.isNormal && !def.isNegative
       })
@@ -994,7 +1060,49 @@ export default function SessionPane({
         })
         .filter((f) => (seen.has(f.id) ? false : (seen.add(f.id), true)))
     },
-    [procedure],
+    [capProc, procedure, procedureId],
+  )
+
+  const procedureLabel = useCallback(
+    (testName) => PROCEDURE_TYPES.find((t) => t.id === testName)?.label || testName || 'Report',
+    [],
+  )
+
+  /* What the "Capture for" list offers: this patient's reports, newest first. */
+  const targets = useMemo(() => {
+    const rows = []
+    const seen = new Set()
+    for (const p of patientProcs) {
+      if (seen.has(p.id)) continue
+      seen.add(p.id)
+      rows.push({
+        procedureId: p.id,
+        label: `${procedureLabel(p.testName)}${p.procedureDate ? ` · ${p.procedureDate}` : ''}`,
+      })
+    }
+    if (procedure && !seen.has(procedureId)) {
+      rows.unshift({
+        procedureId,
+        label: `${procedureLabel(procedure.testName)}${procedure.procedureDate ? ` · ${procedure.procedureDate}` : ''}`,
+      })
+    }
+    return rows
+  }, [patientProcs, procedure, procedureId, procedureLabel])
+
+  const pickTarget = useCallback(
+    (id) => {
+      if (!id || id === procedureId) {
+        setTarget(null)
+        setTargetSection(null)
+        return
+      }
+      const proc = patientProcs.find((p) => p.id === id)
+      setTarget({ procedureId: id, patientId: proc?.patientId || patientId, label: proc?.testName || '' })
+      setTargetSection(null)
+      setTargetProc(null)
+      setTargetMedia([])
+    },
+    [patientId, patientProcs, procedureId],
   )
 
   if (loading || !procedure) {
@@ -1120,8 +1228,8 @@ export default function SessionPane({
               {cap.frameSize.width} × {cap.frameSize.height}
             </Chip>
           ) : null}
-          <Chip tone={media.length ? 'brand' : 'info'}>
-            <Images size={11} /> {media.length}
+          <Chip tone={capMedia.length ? 'brand' : 'info'} title={sameTarget ? 'Frames on this report' : 'Frames captured for the selected exam'}>
+            <Images size={11} /> {capMedia.length}
           </Chip>
           <Button size="sm" variant="ghost" icon={Images} onClick={() => setLibraryOpen(true)}>
             Media library
@@ -1131,7 +1239,12 @@ export default function SessionPane({
         <div className={`console-grid view-${view}`}>
           {view === 'console' ? (
             <MediaRail
-              media={media}
+              media={capMedia}
+              targets={targets}
+              targetId={target?.procedureId || procedureId || ''}
+              targetNote={sameTarget ? '' : `Reporting ${procedureLabel(procedure?.testName)}`}
+              onPickTarget={pickTarget}
+              onPickOther={() => setTargetPicker(true)}
               plateIds={slotIds}
               onOpen={setPreview}
               onAdd={placeOnPlate}
@@ -1150,8 +1263,8 @@ export default function SessionPane({
             <div className={`stage-host${view === 'console' ? '' : ' parked'}`} aria-hidden={view !== 'console'}>
               <CaptureStage
                 cap={cap}
-                activeSection={activeSection}
-                onSelectSection={setActiveSection}
+                activeSection={capSection}
+                onSelectSection={setCapSection}
                 compact={view !== 'console'}
                 showDevicePicker={view === 'console'}
               />
@@ -1401,6 +1514,25 @@ export default function SessionPane({
         onChoose={choosePicture}
         onImport={importFiles}
         slotLabel={picker?.index !== null && picker?.index !== undefined ? `picture ${picker.index + 1}` : null}
+      />
+
+      <SessionPicker
+        open={targetPicker}
+        onClose={() => setTargetPicker(false)}
+        onPick={(proc) => {
+          if (!proc) return
+          if (proc.id === procedureId) {
+            setTarget(null)
+            setTargetSection(null)
+          } else {
+            setTarget({ procedureId: proc.id, patientId: proc.patientId, label: proc.testName || '' })
+            setTargetSection(null)
+            setTargetProc(null)
+            setTargetMedia([])
+          }
+          setTargetPicker(false)
+        }}
+        openProcedureIds={[procedureId].filter(Boolean)}
       />
 
       {preview ? (
