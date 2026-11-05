@@ -1,0 +1,1712 @@
+/**
+ * SessionPane.jsx — one live reporting console.
+ *
+ * One pane = one procedure. The workspace shell can place two of these side by
+ * side, so an operator can capture for patient A while writing the report for
+ * patient B (or capture the colonoscopy while the OGD report is being typed).
+ * Each pane owns its procedure, its media and its camera state; nothing is
+ * shared except the capture device itself, which is arbitrated in captureLock.
+ *
+ * This is the heart of the application and it is deliberately ONE screen: the
+ * captured frames on the left, the live endoscopic image in the middle and the
+ * finished report — including its 2 x 2 / 2 x 3 picture plate — on the right.
+ * The doctor captures, writes and prints without ever changing view, exactly
+ * like the console software most endoscopy units already use.
+ *
+ * The detailed findings / procedure-details editors are still one click away;
+ * the camera keeps streaming (parked off-screen) while they are open, so a frame
+ * can be captured at any moment from the top bar.
+ */
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Save,
+  Printer,
+  FileText,
+  ImagePlus as ImagePlusIcon,
+  CheckCircle2,
+  ArrowLeft,
+  Camera,
+  Video,
+  Square,
+  Loader2,
+  Sparkles,
+  Images,
+  ClipboardList,
+  Stethoscope,
+  MonitorPlay,
+  MousePointerClick,
+  Upload,
+  Trash2,
+  FileCheck2,
+} from 'lucide-react'
+
+import { api, mediaSrc, mediaPathOf, newUid } from '../lib/api.js'
+import { analyse, emptyProcedure, findingsForSection, findFindingDef } from '../lib/autoReport.js'
+import { sectionsForProcedure, PROCEDURE_TYPES } from '../lib/anatomy.js'
+import { buildReportModel, renderPlainText, imageLayoutDef } from '../lib/reportModel.js'
+import { buildPrintHtml, buildImagePlusHtml } from '../lib/printHtml.js'
+import { hydratePrintImages } from '../lib/printImages.js'
+import useCapture, { fmtDuration, retainWarmStream } from '../lib/useCapture.js'
+import { claimCapture, releaseCapture, onCaptureOwner } from '../lib/captureLock.js'
+import { markerTypeForFinding, markerColor } from '../lib/markerTypes.js'
+
+import FindingsPanel from './FindingsPanel.jsx'
+import AnnotationEditor from './AnnotationEditor.jsx'
+import DetailsPanel from './DetailsPanel.jsx'
+import AuditPanel from './AuditPanel.jsx'
+import MediaRail from './MediaRail.jsx'
+import CaptureStage from './CaptureStage.jsx'
+import ReportView, { AutoSummary } from './ReportView.jsx'
+import { PicturePicker, PlateControls } from './ReportPlate.jsx'
+import ImagePlus from './ImagePlus.jsx'
+import PrintPreview from './PrintPreview.jsx'
+import { MediaThumb } from './CapturePanel.jsx'
+import {
+  Banner,
+  Button,
+  Card,
+  Chip,
+  ConfirmDialog,
+  Empty,
+  Modal,
+  ProcedureChip,
+  Select,
+  useToast,
+} from './ui.jsx'
+
+/* -------------------------------------------------------------------------- */
+
+function Topbar({ children }) {
+  return <header className="topbar">{children}</header>
+}
+
+const VIEWS = [
+  { value: 'console', label: 'Live console', icon: MonitorPlay },
+  { value: 'report', label: 'Report page', icon: FileText },
+  { value: 'findings', label: 'Findings', icon: ClipboardList },
+  { value: 'details', label: 'Procedure details', icon: Stethoscope },
+]
+
+export default function SessionPane({
+  paneKey = 'A',
+  compact = false,
+  badge = null,
+  /* The second pane must not grab the capture card on mount — the first pane
+     already holds it, and two getUserMedia calls on one device fail. */
+  deferCapture = false,
+  procedureId,
+  patientId,
+  clinic,
+  templates,
+  doctors,
+  onClose,
+  onRegisterMenu,
+  onSaved,
+  onOpenPatient,
+}) {
+  const toast = useToast()
+  const [procedure, setProcedure] = useState(null)
+  const [patient, setPatient] = useState(null)
+  const [media, setMedia] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [view, setView] = useState('console')
+  const [activeSection, setActiveSection] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [savedAt, setSavedAt] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [imagePlus, setImagePlus] = useState(false)
+  const [sealUrl, setSealUrl] = useState('')
+  const [picturePrint, setPicturePrint] = useState(null) // 4 | 6 | null
+  const [confirmFinal, setConfirmFinal] = useState(false)
+  // { html, title } — the exact document handed to the printer, shown in the
+  // in-app preview first because Electron's dialog has no preview pane.
+  const [printJob, setPrintJob] = useState(null)
+  const [aiOpen, setAiOpen] = useState(false)
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiResult, setAiResult] = useState(null)
+  const [aiSourceMedia, setAiSourceMedia] = useState(null)
+  const [aiStatus, setAiStatus] = useState(null)
+  const [picker, setPicker] = useState(null)
+  const [preview, setPreview] = useState(null)
+  const [libraryOpen, setLibraryOpen] = useState(false)
+
+  const menuActionsRef = useRef({})
+  const saveTimer = useRef(null)
+  const patientSaveTimer = useRef(null)
+  const saveRef = useRef(null)
+  const captureHandler = useRef(() => {})
+
+  /* ------------------------------------------------------------------ load --- */
+
+  const load = useCallback(async () => {
+    if (!procedureId) {
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    try {
+      const proc = await api.procedures.get(procedureId)
+      if (!proc) {
+        toast.push({ tone: 'err', title: 'Report not found' })
+        onClose?.()
+        return
+      }
+      const merged = { ...emptyProcedure(proc.testName), ...proc }
+      merged.biopsy = { ...emptyProcedure().biopsy, ...(proc.biopsy || {}) }
+      merged.hpylori = { ...emptyProcedure().hpylori, ...(proc.hpylori || {}) }
+      merged.sectionNotes = proc.sectionNotes || {}
+      merged.entries = Array.isArray(proc.entries) ? proc.entries : []
+      setProcedure(merged)
+      setMedia(proc.media || [])
+      const sections = sectionsForProcedure(merged.testName)
+      setActiveSection(sections[0]?.id || null)
+
+      const pat = await api.patients.get(proc.patientId)
+      setPatient(pat)
+      setDirty(false)
+    } catch (err) {
+      toast.push({ tone: 'err', title: 'Could not open the report', body: err.message })
+    } finally {
+      setLoading(false)
+    }
+  }, [procedureId, onClose, toast])
+
+  useEffect(() => {
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [procedureId])
+
+  useEffect(() => {
+    api.ai.status().then(setAiStatus).catch(() => setAiStatus(null))
+  }, [])
+
+  /* ---------------------------------------------------------------- mutate --- */
+
+  const patch = useCallback((changes) => {
+    setProcedure((p) => ({ ...p, ...changes }))
+    setDirty(true)
+  }, [])
+
+  const toggleFinding = useCallback((sectionId, findingId) => {
+    setProcedure((p) => {
+      const entries = [...(p.entries || [])]
+      const idx = entries.findIndex((e) => e.sectionId === sectionId && e.findingId === findingId)
+      if (idx >= 0) entries.splice(idx, 1)
+      else entries.push({ uid: newUid(), sectionId, findingId, values: {}, notes: '' })
+      return { ...p, entries }
+    })
+    setDirty(true)
+  }, [])
+
+  const setValue = useCallback((sectionId, findingId, key, value) => {
+    setProcedure((p) => ({
+      ...p,
+      entries: (p.entries || []).map((e) =>
+        e.sectionId === sectionId && e.findingId === findingId ? { ...e, values: { ...e.values, [key]: value } } : e,
+      ),
+    }))
+    setDirty(true)
+  }, [])
+
+  const setNote = useCallback((sectionId, findingId, note) => {
+    setProcedure((p) => ({
+      ...p,
+      entries: (p.entries || []).map((e) =>
+        e.sectionId === sectionId && e.findingId === findingId ? { ...e, notes: note } : e,
+      ),
+    }))
+    setDirty(true)
+  }, [])
+
+  const setSectionNote = useCallback((sectionId, note) => {
+    setProcedure((p) => ({ ...p, sectionNotes: { ...(p.sectionNotes || {}), [sectionId]: note } }))
+    setDirty(true)
+  }, [])
+
+  /* ------------------------------------------------------------------ save --- */
+
+  const stripMedia = (p) => {
+    const { media: _drop, ...rest } = p
+    return rest
+  }
+
+  const save = useCallback(
+    async (opts = {}) => {
+      if (!procedure || !patientId) return null
+      setSaving(true)
+      try {
+        const payload = stripMedia({ ...procedure, ...(opts.changes || {}) })
+        const saved = await api.procedures.save(patientId, payload)
+        setProcedure((p) => ({ ...p, ...opts.changes, ...saved, media: p.media }))
+        setDirty(false)
+        setSavedAt(new Date())
+        if (!opts.silent) toast.push({ tone: 'ok', title: 'Report saved' })
+        onSaved?.()
+        return saved
+      } catch (err) {
+        toast.push({ tone: 'err', title: 'Save failed', body: err.message })
+        return null
+      } finally {
+        setSaving(false)
+      }
+    },
+    [procedure, patientId, toast, onSaved],
+  )
+
+  // Used by background bookkeeping (linking the report to a doctor record) that
+  // must persist without pretending the operator made an edit.
+  saveRef.current = save
+
+  // Debounced autosave keeps the record safe without interrupting documentation.
+  useEffect(() => {
+    if (!dirty || !procedure) return undefined
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      save({ silent: true, changes: {} })
+    }, 3000)
+    return () => clearTimeout(saveTimer.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, procedure])
+
+  /* ----------------------------------------------------------------- model --- */
+
+  const template = useMemo(
+    () => templates.find((t) => t.isDefault) || templates[0] || null,
+    [templates],
+  )
+
+  const mergedTemplate = useMemo(
+    () => (template ? { ...template, clinic: { ...(template.clinic || {}), ...(clinic || {}) } } : null),
+    [template, clinic],
+  )
+
+  /* --------------------------------------------------- Word report template --- */
+
+  /** The .docx the clinic's report is printed into, kept on the report template. */
+  const wordTemplate = template?.layout?.wordTemplate || null
+
+  const uploadWordTemplate = useCallback(async () => {
+    if (!template) return
+    setBusy(true)
+    try {
+      const res = await api.templates.importDocx()
+      if (!res?.ok) {
+        if (res && !res.cancelled) {
+          toast.push({ tone: 'err', title: 'Could not read that Word file', body: res.error || '' })
+        }
+        return
+      }
+      const next = {
+        ...template,
+        layout: {
+          ...template.layout,
+          wordTemplate: {
+            fileName: res.fileName,
+            bytes: res.bytes,
+            base64: res.base64,
+            blocks: res.blocks || [],
+            tokens: res.tokens || [],
+            unknownTokens: res.unknownTokens || [],
+            importedAt: new Date().toISOString(),
+          },
+        },
+      }
+      await api.templates.save(next)
+      await onSaved?.()
+      toast.push({
+        tone: 'ok',
+        title: 'Word template attached',
+        body: `${res.fileName} — the Word button now fills this file.`,
+      })
+    } catch (err) {
+      toast.push({ tone: 'err', title: 'Could not attach that Word file', body: err?.message || String(err) })
+    } finally {
+      setBusy(false)
+    }
+  }, [onSaved, template, toast])
+
+  const removeWordTemplate = useCallback(async () => {
+    if (!template) return
+    setBusy(true)
+    try {
+      const layout = { ...template.layout }
+      delete layout.wordTemplate
+      await api.templates.save({ ...template, layout })
+      await onSaved?.()
+      toast.push({ tone: 'ok', title: 'Word template removed', body: 'Reports use the built-in layout again.' })
+    } finally {
+      setBusy(false)
+    }
+  }, [onSaved, template, toast])
+
+  const analysis = useMemo(
+    () => (procedure ? analyse(procedure, { mediaCount: media.length }) : null),
+    [procedure, media.length],
+  )
+
+  const model = useMemo(() => {
+    if (!procedure || !patient || !analysis) return null
+    // `media` lives in its own state (it changes on every capture) so it is
+    // injected here — this is what keeps the report plate and the rail in sync.
+    return buildReportModel(patient, { ...procedure, media }, mergedTemplate, { sealDataUrl: sealUrl })
+  }, [procedure, patient, media, mergedTemplate, analysis, sealUrl])
+
+  const endoscopists = useMemo(
+    () => (doctors || []).filter((d) => d.active !== false && (!d.role || d.role === 'endoscopist')),
+    [doctors],
+  )
+
+  const applyDoctor = useCallback(
+    async (doctorId, opts = {}) => {
+      const d = (doctors || []).find((x) => x.id === doctorId)
+      const changes = {
+        performingDoctorId: doctorId || '',
+        performingDoctor: d?.name || '',
+        performingDoctorDegrees: d?.degrees || '',
+        performingDoctorDesignation: d?.designation || '',
+        performingDoctorAffiliation: d?.affiliation || '',
+        performingDoctorSealPath: d?.sealPath || '',
+      }
+      if (opts.quiet) {
+        // Linking the report to a doctor record is bookkeeping, not an edit the
+        // operator made. It must not raise "Unsaved changes…" the moment a
+        // report is opened, so update the state and persist it in the background.
+        setProcedure((p) => ({ ...p, ...changes }))
+        setTimeout(() => saveRef.current?.({ silent: true, changes }), 250)
+      } else {
+        patch(changes)
+      }
+      if (!doctorId) {
+        setSealUrl('')
+        return
+      }
+      try {
+        const res = await api.doctors.sealDataUrl(doctorId)
+        setSealUrl(res?.dataUrl || '')
+      } catch {
+        setSealUrl('')
+      }
+    },
+    [doctors, patch],
+  )
+
+  // Link the report to a doctor record so the seal and degrees appear:
+  //   1. an explicit id already on the report wins;
+  //   2. otherwise match the stored name (older reports only carry a name);
+  //   3. otherwise fall back to the default endoscopist.
+  useEffect(() => {
+    if (!procedure || procedure.performingDoctorId) return
+    const byName = (doctors || []).find((d) => d.name === procedure.performingDoctor)
+    if (byName) {
+      applyDoctor(byName.id, { quiet: true })
+      return
+    }
+    if (procedure.performingDoctor) return
+    const preferred = (doctors || []).find((d) => d.isDefault && d.active !== false) || endoscopists[0]
+    if (preferred) applyDoctor(preferred.id, { quiet: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [procedure?.id, doctors])
+
+  useEffect(() => {
+    const id = procedure?.performingDoctorId
+    if (!id) {
+      setSealUrl('')
+      return
+    }
+    let alive = true
+    api.doctors
+      .sealDataUrl(id)
+      .then((res) => alive && setSealUrl(res?.dataUrl || ''))
+      .catch(() => alive && setSealUrl(''))
+    return () => {
+      alive = false
+    }
+  }, [procedure?.performingDoctorId])
+
+  const slotIds = useMemo(
+    () => (model?.imagePlan?.slots || []).map((s) => s.id),
+    [model],
+  )
+
+  /* ----------------------------------------------------------- capture hook --- */
+
+  const cap = useCapture({
+    patientId,
+    procedureId,
+    media,
+    setMedia,
+    activeSection,
+    procedure,
+    // Open the card as soon as the report opens, not when the operator first
+    // presses Capture: the video processor needs a moment to lock its signal,
+    // and paying that while the console is already on screen feels instant.
+    autoStart: !deferCapture,
+    onCaptured: (rec) => captureHandler.current(rec),
+  })
+
+  // The card stays warm while switching tabs; leaving the patient closes it.
+  // The stream is reference-counted, so closing one of two open panes leaves the
+  // other one's picture running.
+  useEffect(() => {
+    const release = retainWarmStream()
+    return () => {
+      release()
+      clearTimeout(patientSaveTimer.current)
+      clearTimeout(saveTimer.current)
+    }
+  }, [])
+
+  // Only the pane that starts the camera owns it; the other pane stands down.
+  useEffect(() => {
+    if (cap.live) claimCapture(paneKey)
+    else releaseCapture(paneKey)
+  }, [cap.live, paneKey])
+
+  useEffect(
+    () =>
+      onCaptureOwner((owner) => {
+        if (owner && owner !== paneKey) cap.stopStream()
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [paneKey, cap.live],
+  )
+
+  /* ------------------------------------------------------ picture plate edits --- */
+
+  /** Writes an explicit ordered list of media ids for the fixed plate. */
+  const writePlate = useCallback(
+    (ids, layoutId) => {
+      const changes = { reportImages: ids }
+      if (layoutId && layoutId !== model?.imagePlan?.mode) changes.imageLayout = layoutId
+      patch(changes)
+    },
+    [model, patch],
+  )
+
+  /** The ids currently on the plate, padded to the plate's capacity. */
+  const paddedIds = useCallback(
+    (layoutId) => {
+      const cap4 = imageLayoutDef(layoutId).capacity
+      const base = (model?.imagePlan?.slots || []).map((s) => s.id).slice(0, cap4)
+      const out = [...base]
+      while (out.length < cap4) out.push(null)
+      return out
+    },
+    [model],
+  )
+
+  const choosePicture = useCallback(
+    (m) => {
+      const target = picker?.index
+      const layoutId = model?.imagePlan?.capacity ? model.imagePlan.mode : 'grid4'
+      const next = paddedIds(layoutId)
+
+      if (target === null || target === undefined) {
+        const free = next.indexOf(null)
+        if (free >= 0) next[free] = m.id
+        else {
+          next.shift()
+          next.push(m.id)
+        }
+      } else {
+        const already = next.indexOf(m.id)
+        if (already >= 0 && already !== target) next[already] = next[target]
+        next[target] = m.id
+      }
+
+      writePlate(next, layoutId)
+      setPicker(null)
+      const slot = target === null || target === undefined ? next.indexOf(m.id) : target
+      toast.push({ tone: 'ok', title: `Picture ${slot + 1} set on the report plate` })
+    },
+    [model, picker, paddedIds, toast, writePlate],
+  )
+
+  const clearPicture = useCallback(
+    (i) => {
+      const layoutId = model?.imagePlan?.capacity ? model.imagePlan.mode : 'grid4'
+      const next = paddedIds(layoutId)
+      next[i] = null
+      writePlate(next, layoutId)
+    },
+    [model, paddedIds, writePlate],
+  )
+
+  const movePicture = useCallback(
+    (i, j) => {
+      const layoutId = model?.imagePlan?.capacity ? model.imagePlan.mode : 'grid4'
+      const next = paddedIds(layoutId)
+      const tmp = next[j]
+      next[j] = next[i]
+      next[i] = tmp
+      writePlate(next, layoutId)
+    },
+    [model, paddedIds, writePlate],
+  )
+
+  const autoFillPlate = useCallback(() => {
+    const layoutId = model?.imagePlan?.capacity ? model.imagePlan.mode : 'grid4'
+    const cap4 = imageLayoutDef(layoutId).capacity
+    const ids = media.filter((m) => m.kind === 'image').slice(0, cap4).map((m) => m.id)
+    const next = [...ids]
+    while (next.length < cap4) next.push(null)
+    writePlate(next, layoutId)
+    toast.push({ tone: 'ok', title: 'Plate filled', body: `${ids.length} picture(s)` })
+  }, [model, media, toast, writePlate])
+
+  const clearPlate = useCallback(() => {
+    patch({ reportImages: [] })
+  }, [patch])
+
+  /**
+   * One click from the rail puts a frame on the plate. In the flowing layout
+   * there are no slots, so the first click promotes the report to the 4-picture
+   * plate — otherwise the button would appear to do nothing.
+   */
+  /** Open the clinic's Word report and edit it on the page. */
+  const openWordReport = useCallback(async () => {
+    setBusy(true)
+    try {
+      const res = await api.docx.pickHtml()
+      if (!res?.ok) {
+        if (res && !res.cancelled) toast.push({ tone: 'err', title: 'Could not open that file' })
+        return
+      }
+      patch({ docHtml: res.html, docName: res.fileName })
+      toast.push({
+        tone: 'ok',
+        title: 'Word report opened',
+        body: `${res.fileName} — click anywhere in the text to change it.`,
+      })
+    } catch (err) {
+      toast.push({ tone: 'err', title: 'Could not open that file', body: err?.message || String(err) })
+    } finally {
+      setBusy(false)
+    }
+  }, [patch, toast])
+
+  const placeOnPlate = useCallback(
+    (m) => {
+      if (!model) return
+      const flow = !model.imagePlan.capacity
+      const layoutId = flow ? 'grid4' : model.imagePlan.mode
+      const cap4 = imageLayoutDef(layoutId).capacity
+      const next = flow ? [] : paddedIds(layoutId)
+      while (next.length < cap4) next.push(null)
+
+      const already = next.indexOf(m.id)
+      if (already >= 0) {
+        toast.push({ tone: 'info', title: `Already printed as picture ${already + 1}` })
+        return
+      }
+
+      const free = next.indexOf(null)
+      if (free >= 0) next[free] = m.id
+      else {
+        next.shift()
+        next.push(m.id)
+      }
+
+      patch({ reportImages: next, ...(flow ? { imageLayout: layoutId } : {}) })
+      toast.push({
+        tone: 'ok',
+        title: `Picture ${next.indexOf(m.id) + 1} on the report plate`,
+        body: flow ? 'The report now uses the 4-picture plate — switch to 6 pictures in the plate bar.' : undefined,
+      })
+    },
+    [model, paddedIds, patch, toast],
+  )
+
+  const setPlateCaption = useCallback(
+    async (item, caption) => {
+      try {
+        const updated = await api.media.update(item.id, { caption })
+        setMedia((list) => list.map((m) => (m.id === item.id ? { ...m, caption: updated?.caption ?? caption } : m)))
+      } catch (err) {
+        toast.push({ tone: 'err', title: 'Could not save the caption', body: err.message })
+      }
+    },
+    [toast],
+  )
+
+  /**
+   * A freshly captured frame drops straight into the next free slot of a fixed
+   * plate. That is what makes "capture six pictures and print" one gesture
+   * instead of six drag-and-drops.
+   */
+  useEffect(() => {
+    captureHandler.current = (rec) => {
+      if (!rec || !model) return
+      const layoutId = model.imagePlan.capacity ? model.imagePlan.mode : (procedure?.imageLayout || template?.layout?.imageLayout || 'flow')
+      const def = imageLayoutDef(layoutId)
+      if (!def.capacity) return // flowing layout: every picture is printed anyway
+      const next = paddedIds(layoutId)
+      const free = next.indexOf(null)
+      if (free < 0) return
+      next[free] = rec.id
+      patch({ reportImages: next })
+    }
+  }, [model, paddedIds, patch, procedure, template])
+
+  /* ----------------------------------------------------- print / export / copy --- */
+
+  const withImages = useCallback(async () => {
+    // Print copies are downscaled; a seven-picture plate of full-resolution
+    // PNG is heavy enough that Chromium refuses to print it at all.
+    const { media: prepared, failed } = await hydratePrintImages(media, api.app.readFileAsDataUrl)
+    if (failed.length) {
+      toast.push({
+        tone: 'warn',
+        title: `${failed.length} picture(s) could not be attached`,
+        body: 'They will print as blank frames. Re-import the file from the Media library.',
+      })
+    }
+    const byId = new Map(prepared.map((m) => [m.id, m]))
+    return [
+      ...model.media.map((m) => byId.get(m.id) || m),
+      ...prepared.filter((m) => m.kind === 'video' && !model.media.some((x) => x.id === m.id)),
+    ]
+  }, [media, model, toast])
+
+  /**
+   * "Print" now opens the in-app preview instead of jumping straight to the
+   * Windows dialog. The dialog is what shows "This app doesn't support print
+   * preview"; previewing the same document here means the operator always sees
+   * the sheet before paper is used.
+   */
+  const doPrint = useCallback(async () => {
+    if (!model) return
+    setBusy(true)
+    try {
+      await save({ silent: true, changes: {} })
+      const enriched = await withImages()
+      const html = buildPrintHtml({ ...model, media: enriched })
+      setPrintJob({ html, title: `${model.reportNo} — ${model.patientLine.name}` })
+    } catch (err) {
+      toast.push({ tone: 'err', title: 'Could not prepare the report', body: err.message })
+    } finally {
+      setBusy(false)
+    }
+  }, [model, save, toast, withImages])
+
+  const doDocx = useCallback(async () => {
+    if (!model) return
+    setBusy(true)
+    try {
+      await save({ silent: true, changes: {} })
+      const res = await api.report.exportDocx({ ...model, media })
+      if (res.ok) {
+        toast.push({
+          tone: 'ok',
+          title: res.fromWordTemplate ? 'Word report written into your template' : 'Word report exported',
+          body: res.warning || res.filePath,
+        })
+      } else if (!res.cancelled) toast.push({ tone: 'err', title: 'Export failed' })
+    } catch (err) {
+      toast.push({ tone: 'err', title: 'Export failed', body: err.message })
+    } finally {
+      setBusy(false)
+    }
+  }, [model, media, save, toast])
+
+  /** "Image Plus" print: particulars and pictures, no report text. */
+  const printPictures = useCallback(
+    async (count, ids) => {
+      if (!model) return
+      setBusy(true)
+      try {
+        const enriched = await withImages()
+        // Keep the plate's order: the sheet must print the pictures exactly as
+        // they were arranged in Image Plus.
+        const ordered = Array.isArray(ids) && ids.length
+          ? ids.map((id) => enriched.find((m) => m.id === id)).filter(Boolean)
+          : enriched
+        const html = buildImagePlusHtml(
+          { ...model, media: ordered },
+          { count: count || ordered.length, images: ordered },
+        )
+        setPicturePrint(null)
+        // `kind` keeps the picture sheet from locking the report as final.
+        setPrintJob({ html, title: `Image Plus — ${model.patientLine.name}`, kind: 'image-plus' })
+      } catch (err) {
+        toast.push({ tone: 'err', title: 'Printing failed', body: err.message })
+      } finally {
+        setBusy(false)
+      }
+    },
+    [model, toast, withImages],
+  )
+
+  const doPdf = useCallback(async () => {
+    if (!model) return
+    setBusy(true)
+    try {
+      const enriched = await withImages()
+      const html = buildPrintHtml({ ...model, media: enriched })
+      const res = await api.report.savePdf(html, `${model.patientLine.name}-${model.reportNo}`)
+      if (res.ok) toast.push({ tone: 'ok', title: 'PDF saved', body: res.filePath })
+      else if (!res.cancelled) toast.push({ tone: 'err', title: 'PDF export failed' })
+    } catch (err) {
+      toast.push({ tone: 'err', title: 'PDF export failed', body: err.message })
+    } finally {
+      setBusy(false)
+    }
+  }, [model, toast, withImages])
+
+  const doCopy = useCallback(async () => {
+    if (!model) return
+    await api.app.copyText(renderPlainText(model))
+    toast.push({ tone: 'ok', title: 'Report text copied to the clipboard' })
+  }, [model, toast])
+
+  const finalise = useCallback(async () => {
+    setConfirmFinal(false)
+    const res = await save({ changes: { status: 'final' }, silent: true })
+    if (res) toast.push({ tone: 'ok', title: 'Report marked final', body: 'It is now locked as a signed report.' })
+  }, [save, toast])
+
+  /**
+   * A successful print is what completes a report: the sheet has left the
+   * printer, so the record is locked and the Finalise button changes colour.
+   * Capturing pictures alone never does this — that only autosaves.
+   */
+  const markPrinted = useCallback(async () => {
+    try {
+      await save({ changes: { status: 'final' }, silent: true })
+    } catch (err) {
+      toast.push({ tone: 'warn', title: 'Printed, but the status was not updated', body: err.message })
+    }
+  }, [save, toast])
+
+  const importFiles = useCallback(async () => {
+    try {
+      const res = await api.media.import({ patientId, procedureId, section: activeSection || null })
+      if (res?.ok && res.added?.length) {
+        setMedia((list) => [...list, ...res.added])
+        toast.push({ tone: 'ok', title: `${res.added.length} file(s) imported` })
+      }
+    } catch (err) {
+      toast.push({ tone: 'err', title: 'Import failed', body: err.message })
+    }
+  }, [activeSection, patientId, procedureId, toast])
+
+  const removeMedia = useCallback(
+    async (item) => {
+      try {
+        await api.media.remove(item.id)
+        setMedia((list) => list.filter((m) => m.id !== item.id))
+        setPreview(null)
+        toast.push({ tone: 'ok', title: 'Deleted' })
+      } catch (err) {
+        toast.push({ tone: 'err', title: 'Delete failed', body: err.message })
+      }
+    },
+    [toast],
+  )
+
+  /* --------------------------------------------------------------- AI review --- */
+
+  const runAiReview = useCallback(
+    async (mediaItem) => {
+      if (!procedure) return
+      const sections = sectionsForProcedure(procedure.testName)
+      const candidateIds = sections.flatMap((s) => findingsForSection(s.id).map((f) => f.id))
+      let target = mediaItem
+      if (!target) {
+        const firstImage = media.filter((m) => m.kind === 'image').slice(-1)[0]
+        if (!firstImage) {
+          toast.push({ tone: 'warn', title: 'No image to review', body: 'Capture or import an image first.' })
+          return
+        }
+        target = firstImage
+      }
+      setAiBusy(true)
+      setAiSourceMedia(target)
+      setAiResult(null)
+      setAiOpen(true)
+      try {
+        const { dataUrl } = await api.app.readFileAsDataUrl(target.filePath)
+        const res = await api.ai.analyseImage({
+          imageDataUrl: dataUrl,
+          candidateIds,
+          context: PROCEDURE_TYPES.find((t) => t.id === procedure.testName)?.label || 'endoscopy',
+        })
+        if (!res.ok) {
+          setAiResult({ error: res.error })
+        } else {
+          setAiResult(res.result)
+        }
+      } catch (err) {
+        setAiResult({ error: err.message })
+      } finally {
+        setAiBusy(false)
+      }
+    },
+    [media, procedure, toast],
+  )
+
+  const acceptAiSuggestion = useCallback(
+    (obs) => {
+      const sections = sectionsForProcedure(procedure.testName)
+      const section = sections.find((s) => findingsForSection(s.id).some((f) => f.id === obs.findingId))
+      if (!section) {
+        toast.push({ tone: 'warn', title: 'Unknown finding', body: `${obs.findingId} is not part of this procedure type.` })
+        return
+      }
+      setProcedure((p) => {
+        const entries = [...(p.entries || [])]
+        if (entries.some((e) => e.sectionId === section.id && e.findingId === obs.findingId)) return p
+        entries.push({
+          uid: newUid(),
+          sectionId: section.id,
+          findingId: obs.findingId,
+          values: {},
+          notes: `Suggested by AI image review${obs.confidence ? ` (confidence ${Math.round(obs.confidence * 100)}%)` : ''}${obs.region ? ` — ${obs.region}` : ''}. ${obs.note || ''}`.trim(),
+        })
+        return { ...p, entries }
+      })
+      setDirty(true)
+      setActiveSection(section.id)
+      toast.push({ tone: 'ok', title: 'Finding added', body: 'Complete the required values, then review the impression.' })
+    },
+    [procedure, toast],
+  )
+
+  /* --------------------------------------------------- keyboard / menu wiring --- */
+
+  useEffect(() => {
+    menuActionsRef.current = {
+      captureImage: () => cap.captureStill(),
+      toggleVideo: cap.toggleVideo,
+      start: cap.startStream,
+    }
+  }, [cap.captureStill, cap.toggleVideo, cap.startStream])
+
+  useEffect(() => {
+    onRegisterMenu?.((action) => {
+      if (action === 'report:save') save({})
+      else if (action === 'report:print') doPrint()
+      else if (action === 'report:docx') doDocx()
+      else if (action === 'report:pdf') doPdf()
+      else if (action === 'capture:image') menuActionsRef.current.captureImage?.()
+      else if (action === 'capture:video') menuActionsRef.current.toggleVideo?.()
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [save, doPrint, doDocx, doPdf])
+
+  /* ----------------------------------------------------------------- render --- */
+
+  /**
+   * One report sheet, rendered either in the narrow column beside the live
+   * picture (compact) or as a full page in the "Report page" tab. Both use the
+   * same component and the same model, so the sheet on screen is exactly what
+   * the printer and the Word export produce.
+   */
+  const renderReportSheet = (compact) => {
+    if (!model) return null
+    return (
+      <ReportView
+        model={model}
+        compact={compact}
+        editable
+        docMode={!!model.reportDoc?.custom}
+        onDocSave={(html) => patch({ docHtml: html })}
+        onDocReset={() => patch({ docHtml: '', docName: '' })}
+        onImagePick={(i) => setPicker({ index: i })}
+        onImageClear={clearPicture}
+        onImageMove={movePicture}
+        onImageCaption={setPlateCaption}
+        onAddPicture={(i) => {
+          const idx = Number.isInteger(i) ? i : slotIds.indexOf(null)
+          setPicker({ index: idx >= 0 ? idx : null })
+        }}
+        onField={(kind, key, value) => {
+          if (kind === 'patient') {
+            setPatient((p) => {
+              const next = { ...p, [key]: value }
+              // Persist to the patient record itself, debounced so typing does
+              // not write on every keystroke.
+              clearTimeout(patientSaveTimer.current)
+              patientSaveTimer.current = setTimeout(() => {
+                api.patients.update(next).catch(() => {})
+              }, 400)
+              return next
+            })
+          } else {
+            // Re-measuring a field and getting the same value back is not an edit.
+            if (procedure[key] === value) return
+            patch({ [key]: value })
+          }
+        }}
+        onRichSave={(html) => patch({ reportHtml: html })}
+        onRichReset={() => patch({ reportHtml: '' })}
+        onPrint={doPrint}
+        onDocx={doDocx}
+        onPdf={doPdf}
+        onCopy={doCopy}
+        astats={analysis?.audit}
+        busy={busy}
+      />
+    )
+  }
+
+  if (!procedureId) {
+    return (
+      <>
+        <Topbar>
+          <h2>Current procedure</h2>
+        </Topbar>
+        <div className="content">
+          <Empty
+            icon={Camera}
+            title="No procedure open"
+            hint="Choose a patient from the Patients screen and press “New report”."
+            action={<Button variant="primary" onClick={onClose}>Go to reports</Button>}
+          />
+        </div>
+      </>
+    )
+  }
+
+  /* Findings already recorded for this frame's section — the raw material for
+     "Mark findings". Falls back to the whole study when the section is unknown. */
+  const markableFindings = useCallback(
+    (mediaItem) => {
+      const sections = sectionsForProcedure(procedure?.testName)
+      const labelOf = Object.fromEntries(sections.map((s) => [s.id, s.label]))
+      const entries = (procedure?.entries || []).filter((e) => {
+        const def = findFindingDef(e.sectionId, e.findingId)
+        return def && !def.isNormal && !def.isNegative
+      })
+      const inSection = mediaItem?.section
+        ? entries.filter(
+            (e) => String(labelOf[e.sectionId] || '').toLowerCase() === String(mediaItem.section).toLowerCase(),
+          )
+        : []
+      const chosen = inSection.length ? inSection : entries
+      const seen = new Set()
+      return chosen
+        .map((e) => {
+          const def = findFindingDef(e.sectionId, e.findingId)
+          return { id: e.findingId, label: def.label, type: markerTypeForFinding(def) }
+        })
+        .filter((f) => (seen.has(f.id) ? false : (seen.add(f.id), true)))
+    },
+    [procedure],
+  )
+
+  if (loading || !procedure) {
+    return (
+      <>
+        <Topbar>
+          <h2>Loading report…</h2>
+        </Topbar>
+        <div className="content">
+          <div className="center muted" style={{ padding: 60 }}>
+            <Loader2 className="spin" size={22} />
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  const statusChip = procedure.status === 'final' ? <Chip tone="ok">Final</Chip> : <Chip tone="warn">Draft</Chip>
+  const plateMode = model?.imagePlan?.mode || 'flow'
+
+  return (
+    <>
+      <Topbar>
+        <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onClose} />
+        {badge}
+        <div>
+          <h2 style={{ fontSize: 15 }}>{patient?.name || 'Patient'}</h2>
+          <div className="crumb">
+            {[patient?.serial ? `ID ${patient.serial}` : patient?.regNo, patient?.age && `${patient.age} ${patient.ageUnit}`, patient?.sex]
+              .filter(Boolean)
+              .join(' · ')}
+          </div>
+        </div>
+        <ProcedureChip testName={procedure.testName} />
+        {statusChip}
+        {dirty ? (
+          <span className="small muted">Unsaved changes…</span>
+        ) : savedAt ? (
+          <span className="small muted">Saved {savedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+        ) : null}
+
+        <div className="topbar-actions">
+          <Button
+            size="sm"
+            variant="success"
+            icon={Camera}
+            onClick={() => cap.captureStill()}
+            disabled={!cap.live || cap.busy}
+            title={cap.live ? 'Capture the current frame at full resolution (F9)' : 'Start the live view first'}
+          >
+            Capture
+          </Button>
+          {cap.recording ? (
+            <Button size="sm" variant="recording" icon={Square} onClick={cap.stopRecording}>
+              Stop {fmtDuration(cap.recSeconds)}
+            </Button>
+          ) : (
+            <Button size="sm" variant="danger" icon={Video} onClick={cap.startRecording} disabled={!cap.live || cap.busy}>
+              Record
+            </Button>
+          )}
+          {/* Save and Word were removed on request: Print saves the report on its
+              way to the printer, and Word export lives on the Report card. */}
+          <Button size="sm" variant="primary" icon={Printer} onClick={doPrint} disabled={busy}>
+            Print
+          </Button>
+          <Button
+            size="sm"
+            variant="success"
+            className={procedure.status === 'final' ? 'is-final' : ''}
+            icon={CheckCircle2}
+            disabled={procedure.status === 'final' || !!analysis?.audit.errors}
+            title={
+              procedure.status === 'final'
+                ? 'This report has been printed and finalised'
+                : analysis?.audit.errors
+                  ? 'Resolve the blocking issues first'
+                  : 'Mark this report final'
+            }
+            onClick={() => setConfirmFinal(true)}
+          >
+            {procedure.status === 'final' ? 'Finalised' : 'Finalise'}
+          </Button>
+        </div>
+      </Topbar>
+
+      <div className="content console-content">
+        {analysis?.audit.errors ? (
+          <div style={{ marginBottom: 10 }}>
+            <Banner tone="err">
+              <strong>{analysis.audit.errors} blocking issue(s) before this report can be finalised.</strong>
+              <div className="small" style={{ marginTop: 3 }}>
+                Open <em>Findings</em> to see them; the audit list on the right of that view jumps straight to the section.
+              </div>
+            </Banner>
+          </div>
+        ) : null}
+
+        <div className="workspace-switch">
+          <div className="segmented">
+            {VIEWS.map((v) => {
+              const Icon = v.icon
+              return (
+                <button
+                  key={v.value}
+                  type="button"
+                  className={view === v.value ? 'on' : ''}
+                  onClick={() => setView(v.value)}
+                >
+                  <Icon size={14} />
+                  {v.label}
+                  {v.value === 'findings' && analysis?.audit?.errors ? (
+                    <em className="seg-badge">{analysis.audit.errors}</em>
+                  ) : null}
+                </button>
+              )
+            })}
+          </div>
+          <div className="spacer" />
+          <Chip tone={cap.live ? 'ok' : 'warn'}>{cap.live ? 'Camera live' : 'Camera idle'}</Chip>
+          {cap.frameSize ? (
+            <Chip tone={cap.frameSize.width >= 1000 ? 'ok' : 'warn'} title="Frames are stored at the sensor's own size">
+              {cap.frameSize.width} × {cap.frameSize.height}
+            </Chip>
+          ) : null}
+          <Chip tone={media.length ? 'brand' : 'info'}>
+            <Images size={11} /> {media.length}
+          </Chip>
+          <Button size="sm" variant="ghost" icon={Images} onClick={() => setLibraryOpen(true)}>
+            Media library
+          </Button>
+        </div>
+
+        <div className={`console-grid view-${view}`}>
+          {view === 'console' ? (
+            <MediaRail
+              media={media}
+              plateIds={slotIds}
+              onOpen={setPreview}
+              onAdd={placeOnPlate}
+              onImport={importFiles}
+              onCapture={() => cap.captureStill()}
+              onRecord={cap.startRecording}
+              onStopRecord={cap.stopRecording}
+              live={cap.live}
+              recording={cap.recording}
+              recSeconds={cap.recSeconds}
+              busy={cap.busy}
+            />
+          ) : null}
+
+          <section className={`console-center${view === 'console' ? '' : ' wide'}`}>
+            <div className={`stage-host${view === 'console' ? '' : ' parked'}`} aria-hidden={view !== 'console'}>
+              <CaptureStage
+                cap={cap}
+                activeSection={activeSection}
+                onSelectSection={setActiveSection}
+                compact={view !== 'console'}
+                showDevicePicker={view === 'console'}
+              />
+            </div>
+
+            {view === 'console' ? (
+              <div className="stage-under">
+                <div className="small muted">
+                  {cap.live
+                    ? 'Frames are saved at the capture device’s own resolution and embedded in the print and Word output without re-compression.'
+                    : 'Connect the video processor, pick it above and press “Start live view”. Everything stays on this computer.'}
+                </div>
+                <div className="spacer" />
+                {cap.lastCaptured ? (
+                  <div className="row small" style={{ gap: 6 }}>
+                    <Camera size={12} className="muted" />
+                    <span className="muted two-line">
+                      Last · {cap.lastCaptured.width ? `${cap.lastCaptured.width} × ${cap.lastCaptured.height} · ` : ''}
+                      {cap.lastCaptured.caption || 'saved'}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {view === 'report' ? (
+              <div className="report-desk">
+                <div className="sheet-scroll">{renderReportSheet(false)}</div>
+                <aside className="report-rail">
+                  <Button size="sm" variant="ghost" icon={ArrowLeft} onClick={() => setView('console')}>
+                    Back to capture
+                  </Button>
+                  <Button size="sm" variant="ghost" icon={ImagePlusIcon} onClick={() => setImagePlus(true)}>
+                    Image Plus
+                  </Button>
+                  <div className="rail-divider" />
+                  <Button size="sm" variant="primary" icon={Save} onClick={() => save({})} disabled={saving}>
+                    Update report
+                  </Button>
+                  <Button size="sm" icon={Printer} onClick={doPrint} disabled={busy}>
+                    Print report
+                  </Button>
+                  <Button size="sm" icon={FileText} onClick={doDocx} disabled={busy}>
+                    Export report
+                  </Button>
+                  <Button size="sm" icon={FileText} onClick={doPdf} disabled={busy}>
+                    Save as PDF
+                  </Button>
+                  <div className="rail-divider" />
+                  <Button size="sm" variant="ghost" icon={ArrowLeft} onClick={onClose}>
+                    Close report
+                  </Button>
+                  <div className="rail-note">
+                    Click a picture slot on the sheet to place a captured frame, or use <strong>Image Plus</strong> for the
+                    6-picture sheet.
+                  </div>
+                </aside>
+              </div>
+            ) : null}
+
+            {view === 'findings' ? (
+              <div className="console-form">
+                <FindingsPanel
+                  procedure={procedure}
+                  activeSection={activeSection}
+                  onSelectSection={(id) => setActiveSection(id)}
+                  onToggleFinding={toggleFinding}
+                  onSetValue={setValue}
+                  onSetNote={setNote}
+                  onSetSectionNote={setSectionNote}
+                  aiEnabled={!!aiStatus?.enabled}
+                  onAiReview={() => runAiReview(null)}
+                  aiBusy={aiBusy}
+                />
+              </div>
+            ) : null}
+
+            {view === 'details' ? (
+              <div className="console-form">
+                <DetailsPanel
+                  procedure={procedure}
+                  patch={patch}
+                  activeSection={activeSection}
+                  onSelectSection={setActiveSection}
+                  audit={analysis?.audit}
+                />
+              </div>
+            ) : null}
+          </section>
+
+          <aside className="console-report">
+            {view === 'findings' ? (
+              <>
+                {analysis ? (
+                  <AutoSummary
+                    analysis={analysis}
+                    procedure={procedure}
+                    onUseDefault={() => patch({ impressionOverride: '' })}
+                  />
+                ) : null}
+                <div style={{ marginTop: 12 }}>
+                  <AuditPanel audit={analysis?.audit} onJump={(sectionId) => setActiveSection(sectionId)} />
+                </div>
+              </>
+            ) : null}
+
+            {view === 'details' ? (
+              <>
+                <AuditPanel audit={analysis?.audit} onJump={(sectionId) => { setView('findings'); setActiveSection(sectionId) }} />
+                {analysis?.recommendations?.length ? (
+                  <div style={{ marginTop: 12 }}>
+                    <Card title="Recommendations generated" bodyClass="tight">
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.55 }}>
+                        {analysis.recommendations.slice(0, 8).map((r, i) => (
+                          <li key={i} style={{ marginBottom: 5 }}>{r}</li>
+                        ))}
+                      </ul>
+                    </Card>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+
+            {view === 'console' && model ? (
+              <>
+                {/* The plate lives inside the report sheet itself (right-hand
+                    column, or three-on-top), so what is on screen is exactly
+                    what comes out of the printer. Only the controls sit here. */}
+                <div className="report-col-head">
+                  <div className="report-col-title">Report</div>
+                  <Button size="sm" icon={FileText} onClick={openWordReport} disabled={busy}>
+                    Open Word file
+                  </Button>
+                  <Button size="sm" icon={ImagePlusIcon} onClick={() => setImagePlus(true)}>
+                    Image Plus
+                  </Button>
+                  <PlateControls
+                    model={model}
+                    onLayout={(id) => patch({ imageLayout: id })}
+                    onAutoFill={autoFillPlate}
+                    onClearAll={clearPlate}
+                  />
+                </div>
+
+                <div className="report-sign-row wt-row">
+                  <FileCheck2 size={13} className="wt-icon" />
+                  <span className="tiny muted">Word template</span>
+                  <span className="tiny wt-name" title={wordTemplate?.fileName || ''}>
+                    {wordTemplate ? wordTemplate.fileName : 'none — built-in layout'}
+                  </span>
+                  <Button size="sm" variant="ghost" icon={Upload} onClick={uploadWordTemplate} disabled={busy}>
+                    {wordTemplate ? 'Replace' : 'Upload .docx'}
+                  </Button>
+                  {wordTemplate ? (
+                    <Button size="sm" variant="ghost" icon={Trash2} onClick={removeWordTemplate} disabled={busy}>
+                      Remove
+                    </Button>
+                  ) : null}
+                </div>
+
+                <div className="report-sign-row">
+                  <span className="tiny muted">Signature &amp; seal</span>
+                  <Select
+                    value={procedure.performingDoctorId || ''}
+                    onChange={(e) => applyDoctor(e.target.value)}
+                    options={[
+                      { value: '', label: '— none —' },
+                      ...endoscopists.map((d) => ({ value: d.id, label: d.name })),
+                    ]}
+                    style={{ maxWidth: 210 }}
+                  />
+                  {sealUrl ? <img className="doctor-seal-thumb" src={sealUrl} alt="seal" /> : null}
+                  <Button size="sm" icon={Printer} onClick={() => setPicturePrint(4)}>
+                    Print pictures only
+                  </Button>
+                </div>
+
+                <div className="report-scroll">{renderReportSheet(true)}</div>
+              </>
+            ) : null}
+          </aside>
+        </div>
+      </div>
+
+      <ImagePlus
+        open={imagePlus}
+        onClose={() => setImagePlus(false)}
+        model={model}
+        media={media}
+        onLayout={(id) => patch({ imageLayout: id })}
+        onPick={(i) => setPicker({ index: i })}
+        onClear={clearPicture}
+        onAutoFill={autoFillPlate}
+        onClearAll={clearPlate}
+        onCapture={() => cap.captureStill()}
+        onPrint={printPictures}
+        live={cap.live}
+        busy={busy}
+      />
+
+      <Modal
+        open={!!picturePrint}
+        onClose={() => setPicturePrint(null)}
+        width={520}
+        title="Print pictures only"
+        footer={
+          <>
+            <Button onClick={() => setPicturePrint(null)}>Cancel</Button>
+            <Button variant="primary" icon={Printer} onClick={() => printPictures(picturePrint)} disabled={busy}>
+              Print {picturePrint || ''} picture{(picturePrint || 0) === 1 ? '' : 's'}
+            </Button>
+          </>
+        }
+      >
+        <p className="tiny muted" style={{ marginTop: 0 }}>
+          Prints the hospital header, the patient particulars and the pictures — no findings, no report text.
+          This is the "Image Plus" sheet.
+        </p>
+        <div className="grid c2" style={{ marginTop: 10 }}>
+          <button
+            type="button"
+            className={`style-option${picturePrint === 4 ? ' on' : ''}`}
+            onClick={() => setPicturePrint(4)}
+          >
+            <strong>4 pictures</strong>
+            <span className="tiny muted">Two rows of two, at 2.2" × 2"</span>
+          </button>
+          <button
+            type="button"
+            className={`style-option${picturePrint === 6 ? ' on' : ''}`}
+            onClick={() => setPicturePrint(6)}
+          >
+            <strong>6 pictures</strong>
+            <span className="tiny muted">Three rows of two, at 2.2" × 2"</span>
+          </button>
+        </div>
+        <p className="tiny muted" style={{ marginTop: 10 }}>
+          {media.filter((m) => m.kind === 'image').length} picture(s) captured for this patient.
+        </p>
+      </Modal>
+
+      <PicturePicker
+        open={!!picker}
+        onClose={() => setPicker(null)}
+        media={media}
+        excludeIds={slotIds.filter(Boolean)}
+        onChoose={choosePicture}
+        onImport={importFiles}
+        slotLabel={picker?.index !== null && picker?.index !== undefined ? `picture ${picker.index + 1}` : null}
+      />
+
+      {preview ? (
+        <MediaModal
+          item={preview}
+          findings={markableFindings(preview)}
+          onAnnotated={(updated) => {
+            setMedia((list) => list.map((m) => (m.id === updated.id ? updated : m)))
+            setPreview(updated)
+          }}
+          onClose={() => setPreview(null)}
+          onDelete={removeMedia}
+          onPlate={(m) => {
+            placeOnPlate(m)
+            setPreview(null)
+          }}
+          onCaption={setPlateCaption}
+        />
+      ) : null}
+
+      <Modal
+        open={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        width="wide"
+        title="Media library"
+        footer={<Button onClick={() => setLibraryOpen(false)}>Close</Button>}
+      >
+        {media.length ? (
+          <div className="thumb-grid">
+            {media.map((m) => (
+              <MediaThumb
+                key={m.id}
+                item={m}
+                selected={slotIds.includes(m.id)}
+                onOpen={setPreview}
+                onDelete={removeMedia}
+                onCaption={setPlateCaption}
+                onAiReview={runAiReview}
+                aiEnabled={!!aiStatus?.enabled}
+                aiBusy={aiBusy}
+              />
+            ))}
+          </div>
+        ) : (
+          <Empty
+            icon={Camera}
+            title="No images captured yet"
+            hint="Start the live view and press “Capture”, or import pictures from this computer."
+            action={<Button onClick={importFiles}>Import files</Button>}
+          />
+        )}
+      </Modal>
+
+      <ConfirmDialog
+        open={confirmFinal}
+        title="Mark this report as final"
+        message="The report will be marked final and locked as a signed study."
+        detail="You can still reopen and edit it later — it is a status change, not a deletion."
+        confirmLabel="Mark final"
+        tone="success"
+        onConfirm={finalise}
+        onCancel={() => setConfirmFinal(false)}
+      />
+
+      <PrintPreview
+        open={!!printJob}
+        html={printJob?.html}
+        title={printJob?.title}
+        onPrinted={printJob?.kind === 'image-plus' ? undefined : markPrinted}
+        onClose={() => setPrintJob(null)}
+        onSavePdf={() => {
+          setPrintJob(null)
+          doPdf()
+        }}
+      />
+
+      <AiReviewDialog
+        open={aiOpen}
+        onClose={() => setAiOpen(false)}
+        busy={aiBusy}
+        result={aiResult}
+        status={aiStatus}
+        media={aiSourceMedia}
+        procedure={procedure}
+        onAccept={acceptAiSuggestion}
+        onOpenSettings={() => toast.push({ tone: 'warn', title: 'Enable AI in Settings', body: 'Settings ▸ AI assist — add a base URL and API key.' })}
+      />
+    </>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/* Full-size media preview                                                     */
+/* -------------------------------------------------------------------------- */
+
+function MediaModal({ item, findings = [], onAnnotated, onClose, onDelete, onPlate, onCaption }) {
+  const [src, setSrc] = useState('')
+  const [marking, setMarking] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    mediaSrc(mediaPathOf(item)).then((s) => alive && setSrc(s))
+    return () => {
+      alive = false
+    }
+  }, [item.filePath])
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      width="wide"
+      title={item.caption || (item.kind === 'video' ? 'Video' : 'Image')}
+      footer={
+        marking ? (
+          <Button onClick={onClose}>Close</Button>
+        ) : (
+        <>
+          {item.kind === 'image' ? (
+            <>
+              <Button variant="primary" onClick={() => onPlate?.(item)}>
+                Put on the report plate
+              </Button>
+              <Button icon={MousePointerClick} onClick={() => setMarking(true)} disabled={!src}>
+                {Array.isArray(item.annotations) && item.annotations.length
+                  ? `Markers (${item.annotations.length})`
+                  : 'Mark findings'}
+              </Button>
+            </>
+          ) : null}
+          <Button onClick={() => api.app.revealPath(item.filePath)}>Show in folder</Button>
+          <div className="spacer" />
+          <Button variant="danger" onClick={() => onDelete?.(item)}>Delete</Button>
+          <Button onClick={onClose}>Close</Button>
+        </>
+        )
+      }
+    >
+      {marking && src ? (
+        <AnnotationEditor
+          item={item}
+          src={src}
+          findings={findings}
+          onCancel={() => setMarking(false)}
+          onSaved={(updated) => {
+            setMarking(false)
+            onAnnotated?.(updated)
+          }}
+        />
+      ) : (
+        <div className="media-view">
+          {!src ? (
+            <div className="center muted" style={{ padding: 60 }}>Loading…</div>
+          ) : item.kind === 'video' ? (
+            <video src={src} controls autoPlay style={{ width: '100%', maxHeight: '68vh' }} />
+          ) : (
+            <div className="media-plain">
+              <img src={src} alt={item.caption || ''} />
+              {Array.isArray(item.annotations) && item.annotations.length ? (
+                item.annotations.map((m, i) => (
+                  <span
+                    key={m.id || i}
+                    className="annot-static"
+                    style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%`, background: markerColor(m.type) }}
+                  >
+                    {i + 1}
+                  </span>
+                ))
+              ) : null}
+            </div>
+          )}
+        </div>
+      )}
+      {marking ? null : (
+      <div className="row" style={{ gap: 8, marginTop: 10 }}>
+        <input
+          className="input"
+          defaultValue={item.caption || ''}
+          placeholder="Caption printed under the picture"
+          onBlur={(e) => onCaption?.(item, e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur()
+          }}
+        />
+      </div>
+      )}
+    </Modal>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/* AI review dialog                                                            */
+/* -------------------------------------------------------------------------- */
+
+function AiReviewDialog({ open, onClose, busy, result, status, media, procedure, onAccept, onOpenSettings }) {
+  const [previewSrc, setPreviewSrc] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    if (media?.filePath) mediaSrc(mediaPathOf(media)).then((s) => alive && setPreviewSrc(s))
+    return () => {
+      alive = false
+    }
+  }, [media])
+
+  const observations = result?.observations || []
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      width="wide"
+      title="AI image review (assistive)"
+      footer={
+        <>
+          <Button onClick={onClose}>Close</Button>
+        </>
+      }
+    >
+      <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', alignItems: 'start' }}>
+        <div>
+          {previewSrc ? (
+            <img src={previewSrc} alt="Reviewed frame" style={{ width: '100%', borderRadius: 10, border: '1px solid var(--line)' }} />
+          ) : (
+            <div className="small muted">No image selected.</div>
+          )}
+          <div className="tiny muted" style={{ marginTop: 6 }}>
+            {media?.caption || ''}
+          </div>
+        </div>
+
+        <div>
+          {busy ? (
+            <div className="row" style={{ gap: 8 }}>
+              <Loader2 size={16} className="spin" />
+              <span className="small">Analysing the frame…</span>
+            </div>
+          ) : result?.error ? (
+            <Banner tone="err">
+              <strong>AI review unavailable</strong>
+              <div className="small" style={{ marginTop: 4 }}>{result.error}</div>
+              <div style={{ marginTop: 10 }}>
+                <Button size="sm" onClick={onOpenSettings}>
+                  Open settings
+                </Button>
+              </div>
+            </Banner>
+          ) : result ? (
+            <>
+              <div className="row" style={{ gap: 8, marginBottom: 10 }}>
+                <Chip tone="brand">
+                  <Sparkles size={11} /> {observations.length} suggestion(s)
+                </Chip>
+                {result.quality ? <Chip tone={result.quality === 'good' ? 'ok' : 'warn'}>Image quality: {result.quality}</Chip> : null}
+              </div>
+              {result.summary ? <p className="small" style={{ marginTop: 0 }}>{result.summary}</p> : null}
+
+              {observations.length ? (
+                <div>
+                  {observations.map((o, i) => {
+                    const def = sectionsForProcedure(procedure.testName)
+                      .map((s) => findFindingDef(s.id, o.findingId))
+                      .find(Boolean)
+                    return (
+                      <div key={i} className="audit-item info" style={{ alignItems: 'center' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600 }}>{def?.label || o.label || o.findingId}</div>
+                          <div className="tiny">
+                            {o.region ? `${o.region} · ` : ''}
+                            {o.confidence !== undefined ? `confidence ${Math.round(Number(o.confidence) * 100)}%` : ''}
+                          </div>
+                          {o.note ? <div className="tiny">{o.note}</div> : null}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          onClick={() => onAccept({ ...o, findingId: def?.id || o.findingId })}
+                          disabled={!def}
+                          title={def ? 'Add this finding to the report' : 'This finding id is not valid for this procedure'}
+                        >
+                          Add
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="banner info">
+                  <div className="small">No specific abnormality was suggested for this frame.</div>
+                </div>
+              )}
+
+              <div className="banner warn" style={{ marginTop: 12 }}>
+                <div className="small">
+                  AI output is a prompt for your own review — it is never inserted into the report automatically and it is
+                  not a diagnosis. Every suggestion must be confirmed by the endoscopist.
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="small muted">
+              {status?.enabled ? 'Ready.' : 'AI assist is switched off. Enable it in Settings ▸ AI assist.'}
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  )
+}

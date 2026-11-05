@@ -12,7 +12,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { ImagePlus, Replace, Trash2, ArrowLeft, ArrowRight, Pencil, Check } from 'lucide-react'
 
-import { api, mediaSrc } from '../lib/api.js'
+import { api, mediaSrc, mediaPathOf } from '../lib/api.js'
 import { Button, Modal } from './ui.jsx'
 
 /** Cached, downscaled thumbnails so a 4K plate never loads six full frames. */
@@ -34,7 +34,7 @@ export function useThumbs(items, width = 320) {
           } catch {
             dataUrl = ''
           }
-          if (!dataUrl) dataUrl = await mediaSrc(i.filePath)
+          if (!dataUrl) dataUrl = await mediaSrc(mediaPathOf(i))
           return [i.id, dataUrl]
         }),
       )

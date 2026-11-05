@@ -15,7 +15,7 @@ const crypto = require('node:crypto')
  * Bump this whenever the schema changes and add a matching entry to MIGRATIONS.
  * Existing clinics are upgraded in place; their data is never recreated.
  */
-const SCHEMA_VERSION = 6
+const SCHEMA_VERSION = 7
 
 /**
  * Ordered, idempotent schema migrations. Each entry moves a database from
@@ -104,6 +104,16 @@ const MIGRATIONS = [
       )
     },
   },
+  {
+    to: 7,
+    name: 'image annotations: markers drawn on a captured frame',
+    up: async (db) => {
+      await db.exec(`ALTER TABLE media ADD COLUMN IF NOT EXISTS annotations JSONB NOT NULL DEFAULT '[]'::jsonb`)
+      // Composited copy with the markers drawn into the pixels, so Word and the
+      // printer show them too — neither can overlay live markup.
+      await db.exec(`ALTER TABLE media ADD COLUMN IF NOT EXISTS marked_path TEXT`)
+    },
+  },
 ]
 
 let PGliteCtor = null
@@ -177,7 +187,9 @@ CREATE TABLE IF NOT EXISTS media (
   bytes INTEGER DEFAULT 0,
   duration_sec REAL,
   taken_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  sort_order INTEGER NOT NULL DEFAULT 0
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  annotations JSONB NOT NULL DEFAULT '[]'::jsonb,
+  marked_path TEXT
 );
 
 CREATE TABLE IF NOT EXISTS doctors (
@@ -924,6 +936,9 @@ function rowToMedia(r) {
     durationSec: r.duration_sec,
     takenAt: r.taken_at,
     sortOrder: r.sort_order,
+    annotations: parseJson(r.annotations, []),
+    // A composited copy with the markers burnt in, used for print and Word.
+    markedPath: r.marked_path || null,
   }
 }
 
@@ -967,6 +982,7 @@ async function updateMedia(id, patch) {
     caption: 'caption',
     section: 'section',
     sortOrder: 'sort_order',
+    markedPath: 'marked_path',
   }
   const sets = []
   const params = [id]
@@ -976,6 +992,10 @@ async function updateMedia(id, patch) {
       sets.push(`${col} = $${i++}`)
       params.push(patch[key])
     }
+  }
+  if ('annotations' in patch) {
+    sets.push(`annotations = $${i++}::jsonb`)
+    params.push(JSON.stringify(patch.annotations || []))
   }
   if (sets.length) await q(`UPDATE media SET ${sets.join(', ')} WHERE id = $1`, params)
   const rows = await q(`SELECT * FROM media WHERE id = $1`, [id])

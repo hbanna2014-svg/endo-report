@@ -206,8 +206,16 @@ function createWindow() {
               hit = await mainWindow.webContents.executeJavaScript(
                 `(() => {
                    const want = ${JSON.stringify(label)};
+                   // "css:<selector>" reaches controls with no visible text,
+                   // such as the picture thumbnails in the captured rail.
+                   if (want.indexOf('css:') === 0) {
+                     const node = document.querySelector(want.slice(4));
+                     if (!node) return false;
+                     node.click();
+                     return true;
+                   }
                    const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim();
-                   const nodes = [...document.querySelectorAll('button, .nav-item, tr, .listitem, .sectionitem, .consult-item, .day-row')];
+                   const nodes = [...document.querySelectorAll('button, [role="button"], .nav-item, tr, .listitem, .sectionitem, .consult-item, .day-row')];
                    const texts = nodes.map((e) => norm(e.textContent));
                    // 1) exact label  2) label followed only by a counter badge  3) substring
                    let idx = texts.indexOf(want);
@@ -1102,6 +1110,31 @@ function registerIpc() {
   handle('media:thumbnail', (filePath, id, width) => thumbs.makeThumb(dataDir, filePath, id, width || 320))
   handle('media:sourceSize', (filePath) => thumbs.sourceSize(filePath))
   handle('media:update', (id, patch) => db.updateMedia(id, patch))
+  handle('media:annotate', async (id, { annotations = [], pngDataUrl = null }) => {
+    // Store the markers, then replace the composited copy. The original capture
+    // is never touched: the markers live in a sibling "-marked.png" so the
+    // doctor can always get back to the clean frame.
+    const record = await db.updateMedia(id, { annotations })
+    if (!record) throw new Error('Image not found')
+
+    if (record.markedPath && fs.existsSync(record.markedPath)) {
+      try {
+        fs.unlinkSync(record.markedPath)
+      } catch {
+        /* a locked file is harmless — it is simply overwritten below */
+      }
+    }
+
+    let markedPath = null
+    const data = String(pngDataUrl || '')
+    if (data.startsWith('data:image/') && data.includes(',')) {
+      const base = path.basename(record.filePath).replace(/\.[^.]+$/, '')
+      const target = path.join(path.dirname(record.filePath), `${base}-marked.png`)
+      fs.writeFileSync(target, Buffer.from(data.slice(data.indexOf(',') + 1), 'base64'))
+      markedPath = target
+    }
+    return db.updateMedia(id, { markedPath })
+  })
   handle('media:remove', (id) => db.deleteMedia(id))
   handle('media:import', async ({ patientId, procedureId, section }) => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {

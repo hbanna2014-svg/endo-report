@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld('endoreport', {
     thumbnail: (filePath, id, width) => invoke('media:thumbnail', filePath, id, width),
     sourceSize: (filePath) => invoke('media:sourceSize', filePath),
     update: (id, patch) => invoke('media:update', id, patch),
+    annotate: (id, payload) => invoke('media:annotate', id, payload),
     remove: (id) => invoke('media:remove', id),
     import: (payload) => invoke('media:import', payload),
   },

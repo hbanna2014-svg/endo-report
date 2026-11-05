@@ -100,18 +100,42 @@ function trimDarkBorder(source) {
  * cost again. It is now held here, outside React, and re-attached instantly;
  * only leaving the patient, pressing Stop or changing device closes it.
  */
-const warm = { stream: null, deviceId: '' }
+const warm = { stream: null, deviceId: '', holders: 0 }
 
 function streamIsLive(stream) {
   return !!stream && stream.getVideoTracks().some((t) => t.readyState === 'live')
 }
 
-export function closeWarmStream() {
+function stopWarmStream() {
   if (warm.stream) {
     warm.stream.getTracks().forEach((t) => t.stop())
     warm.stream = null
     warm.deviceId = ''
   }
+}
+
+/**
+ * Pins the shared stream while a console pane is on screen.
+ *
+ * Two sessions can be open side by side, and closing one of them must not yank
+ * the camera out from under the other. The stream is only released when the last
+ * holder unmounts.
+ */
+export function retainWarmStream() {
+  warm.holders += 1
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    warm.holders = Math.max(0, warm.holders - 1)
+    if (warm.holders === 0) stopWarmStream()
+  }
+}
+
+/** Explicit stop — the operator pressed Stop or left the patient entirely. */
+export function closeWarmStream() {
+  warm.holders = 0
+  stopWarmStream()
 }
 
 export function fmtDuration(sec) {

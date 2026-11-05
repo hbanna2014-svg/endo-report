@@ -929,8 +929,9 @@ function attachImageBuffers(model) {
   const media = (model.media || []).map((m) => {
     if (m.kind !== 'image') return m
     try {
-      if (m.filePath && fs.existsSync(m.filePath)) {
-        return { ...m, __buffer: fs.readFileSync(m.filePath) }
+      const src = m.markedPath || m.filePath
+      if (src && fs.existsSync(src)) {
+        return { ...m, __buffer: fs.readFileSync(src) }
       }
     } catch {
       /* fall through to the inline copy */

@@ -61,6 +61,7 @@ export const api = {
     thumbnail: guard(bridge?.media?.thumbnail, 'media.thumbnail'),
     sourceSize: guard(bridge?.media?.sourceSize, 'media.sourceSize'),
     update: guard(bridge?.media?.update, 'media.update'),
+    annotate: guard(bridge?.media?.annotate, 'media.annotate'),
     remove: guard(bridge?.media?.remove, 'media.remove'),
     import: guard(bridge?.media?.import, 'media.import'),
   },
@@ -123,6 +124,14 @@ export const api = {
 /* -------------------------------------------------------------------------- */
 /* Media helpers                                                               */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Which file to draw: the annotated composite when the frame carries markers,
+ * otherwise the untouched capture.
+ */
+export function mediaPathOf(item) {
+  return item?.markedPath || item?.filePath || ''
+}
 
 /** Converts a file:// path stored in the database into an <img src>. */
 export async function mediaSrc(filePath) {

@@ -4,6 +4,45 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.17 — 2026-11-05
+
+### Added
+
+- **Two sessions side by side.** The workspace can hold a second, fully
+  independent pane: capture patient A while typing patient B's report, or capture
+  the colonoscopy on the right while the OGD report is finished on the left. Each
+  pane has its own patient, procedure, findings, media and camera controls; the
+  bar at the top adds a second session, swaps the two, or collapses back to one.
+  * *Second session* opens a picker: search a patient, reopen any of their
+    reports, or start a fresh one.
+  * *Endoscopy + colonoscopy, side by side* starts both reports for one patient
+    and opens them in the two panes — the same-day draft is reused instead of
+    duplicated.
+  * Only one pane can hold the capture card; starting the camera in one pane
+    releases it in the other, and closing a pane no longer kills the stream the
+    remaining pane is using.
+
+- **Markers on captured pictures.** Every frame can carry numbered markers:
+  * *Mark findings* places a marker for each finding already recorded in that
+    section — polyp, ulcer, erosion, erythema, bleeding, varices, mass — using the
+    colour of that finding. This is a documentation aid: the software is not
+    reading the pixels and not diagnosing.
+  * Click the picture to drop a marker by hand, drag it to the true spot, delete
+    it, or clear them all. Eight marker types are available.
+  * The markers are stored as data (so they stay editable) **and** composited
+    into a `-marked.png` beside the original, because Word and the printer cannot
+    overlay live markup. The original capture is never modified.
+  * The composite carries a numbered legend strip (`1 Polyp · 2 Ulcer`), so the
+    printed picture explains itself.
+  * Thumbnails, the report plate, the print preview and the Word file all use the
+    marked copy automatically.
+
+### Database
+
+- Schema v7: `media.annotations` (JSONB) and `media.marked_path`.
+
+---
+
 ## 0.5.16 — 2026-11-05
 
 ### Added

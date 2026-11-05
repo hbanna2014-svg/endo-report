@@ -10,7 +10,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Upload, Trash2, FolderOpen, Pencil, Sparkles, Image as ImageIcon, Video, Camera } from 'lucide-react'
 
-import { api, mediaSrc } from '../lib/api.js'
+import { api, mediaSrc, mediaPathOf } from '../lib/api.js'
 import { fmtDuration } from '../lib/useCapture.js'
 import CaptureStage from './CaptureStage.jsx'
 import { Button, Card, Empty, Input, useToast } from './ui.jsx'
@@ -30,7 +30,7 @@ export function MediaThumb({ item, onOpen, onDelete, onCaption, onAiReview, aiEn
       } catch {
         url = ''
       }
-      if (!url) url = await mediaSrc(item.filePath)
+      if (!url) url = await mediaSrc(mediaPathOf(item))
       if (alive) setSrc(url)
     })()
     return () => {
@@ -258,7 +258,7 @@ function PreviewMedia({ item }) {
   const [src, setSrc] = useState('')
   useEffect(() => {
     let alive = true
-    mediaSrc(item.filePath).then((s) => alive && setSrc(s))
+    mediaSrc(mediaPathOf(item)).then((s) => alive && setSrc(s))
     return () => {
       alive = false
     }
