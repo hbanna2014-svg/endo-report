@@ -1055,6 +1055,7 @@ function registerIpc() {
   handle('patients:save', (patient) => db.savePatient(patient))
   handle('patients:remove', (id) => db.deletePatient(id))
   handle('patients:nextRegNo', () => db.nextRegNo())
+  handle('patients:peekSerial', () => db.peekNextSerial())
   handle('patients:referrers', () => db.listReferrers())
   handle('patients:fieldHistory', () => db.listFieldHistory())
 

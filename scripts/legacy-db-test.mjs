@@ -51,14 +51,22 @@ if (stage === 'create') {
     `ALTER TABLE doctors DROP COLUMN IF EXISTS degrees`,
     `ALTER TABLE doctors DROP COLUMN IF EXISTS affiliation`,
     `ALTER TABLE doctors DROP COLUMN IF EXISTS seal_path`,
-    `ALTER TABLE doctors DROP COLUMN IF EXISTS is_default`,
-    `UPDATE schema_meta SET value = '1' WHERE key = 'version'`,
-  ]) {
-    await db.q(sql)
-  }
-  await db.q(
-    `INSERT INTO patients (id, reg_no, name, age, sex) VALUES ('legacy-1','OLD-1','Legacy Patient','61','Male')`,
-  )
+     `ALTER TABLE doctors DROP COLUMN IF EXISTS is_default`,
+     // v6: the sequential patient ID did not exist in this release.
+     `ALTER TABLE patients DROP COLUMN IF EXISTS serial_no`,
+     `DROP TABLE IF EXISTS counters`,
+     `UPDATE schema_meta SET value = '1' WHERE key = 'version'`,
+   ]) {
+     await db.q(sql)
+   }
+   // Deliberately inserted out of order so the test proves the numbering follows
+   // the order patients were *entered*, not the order the rows come back in.
+   await db.q(
+     `INSERT INTO patients (id, reg_no, name, age, sex, created_at) VALUES
+       ('legacy-1','OLD-1','Legacy Patient','61','Male','2025-01-05'),
+       ('legacy-2','OLD-2','Second Patient','44','Female','2025-03-11'),
+       ('legacy-3','OLD-3','Third Patient','29','Male','2024-12-01')`,
+   )
   console.log('LEGACY DATABASE PREPARED')
   process.exit(0)
 }
@@ -81,6 +89,21 @@ const saved = await db.getPatient('legacy-1')
 check('the old record survived', saved && saved.name === 'Legacy Patient')
 const updated = await db.savePatient({ ...saved, identityNo: 'C1853174' })
 check('the old record can be edited with the new fields', updated.identityNo === 'C1853174')
+
+/* v6 — existing patients are numbered in the order they were entered. */
+const p1 = await db.getPatient('legacy-1')
+const p2 = await db.getPatient('legacy-2')
+const p3 = await db.getPatient('legacy-3')
+console.log(`  assigned: legacy-1=${p1.serial} legacy-2=${p2.serial} legacy-3=${p3.serial}`)
+check('the oldest record became 01', p3.serial === '01', p3.serial)
+check('the next became 02', p1.serial === '02', p1.serial)
+check('the newest existing record became 03', p2.serial === '03', p2.serial)
+check('the counter continues after the highest number', (await db.nextRegNo()) === '04', await db.nextRegNo())
+check('editing an upgraded record keeps its number', updated.serial === '02', updated.serial)
+
+const fresh = await db.savePatient({ name: 'New After Upgrade', age: '50', sex: 'Male' })
+check('the first new patient after the upgrade is 04', fresh.serial === '04', fresh.serial)
+check('its MRN is left empty', fresh.regNo === null, String(fresh.regNo))
 
 // The regression itself: no index may reference a migrated column before the
 // migrations have had a chance to add it.

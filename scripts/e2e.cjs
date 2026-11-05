@@ -54,11 +54,46 @@ async function run() {
   check('ESM reporting engine is importable from the main process', typeof emptyProcedure === 'function')
   check('the report model is importable from the main process', typeof buildReportModel === 'function')
 
-  console.log('\n--- 2. Patient CRUD ---')
-  const regNo = await db.nextRegNo()
-  console.log(`  generated registration number: ${regNo}`)
-  check('registration number follows ER<year>-####', /^ER\d{4}-\d{4}$/.test(regNo), regNo)
+  console.log('\n--- 2. Sequential patient ID (01, 02, 03 …) ---')
+  const preview = await db.nextRegNo()
+  console.log(`  next patient ID: ${preview}`)
+  check('the first patient is 01 on an empty database', preview === '01', preview)
 
+  const s1 = await db.savePatient({ name: 'Serial One', age: '30', sex: 'Male' })
+  const s2 = await db.savePatient({ name: 'Serial Two', age: '31', sex: 'Female' })
+  const s3 = await db.savePatient({ name: 'Serial Three', age: '32', sex: 'Male' })
+  check('first patient receives 01', s1.serial === '01', s1.serial)
+  check('numbers continue 02 then 03', s2.serial === '02' && s3.serial === '03', `${s2.serial}, ${s3.serial}`)
+
+  // The whole point of the feature: a gap is left, nobody is renumbered.
+  await db.deletePatient(s2.id)
+  const s4 = await db.savePatient({ name: 'Serial Four', age: '33', sex: 'Female' })
+  check('deleting the middle patient does not renumber the rest', s3.serial === '03' && s4.serial === '04', `${s3.serial}, ${s4.serial}`)
+  const survivor = await db.getPatient(s3.id)
+  check('the surviving record keeps 03', survivor.serial === '03', survivor.serial)
+  check('the deleted number 02 is not handed out again', s4.serial !== '02', s4.serial)
+
+  const ordered = await db.listPatients()
+  console.log(`  register order: ${ordered.map((p) => p.serial).join(', ')}`)
+  check('the last patient entered is at the top of the list', ordered[0].serial === '04', ordered[0].serial)
+  check('01 is at the bottom of the list', ordered[ordered.length - 1].serial === '01', ordered[ordered.length - 1].serial)
+
+  const edited = await db.savePatient({ ...survivor, name: 'Serial Three Renamed' })
+  check('editing a record never changes its number', edited.serial === '03', edited.serial)
+
+  const reRegistered = await db.savePatient({ name: 'Serial One', age: '30', sex: 'Male' })
+  check('re-registering a known patient keeps the original number', reRegistered.serial === '01', reRegistered.serial)
+
+  const byId = await db.listPatients('04')
+  check('a patient can be found by ID', byId.some((p) => p.id === s4.id))
+
+  for (const p of [s1, s3, s4]) {
+    // eslint-disable-next-line no-await-in-loop
+    await db.deletePatient(p.id)
+  }
+  check('deleting them all leaves the counter where it was', (await db.nextRegNo()) === '05', await db.nextRegNo())
+
+  console.log('\n--- 2c. Patient CRUD ---')
   const patient = await db.savePatient({
     name: 'E2E Test Patient',
     age: '54',
@@ -72,7 +107,16 @@ async function run() {
     history: 'Nil significant',
   })
   check('patient saved with an id', !!patient.id)
-  check('patient received a registration number', !!patient.regNo)
+  check('patient received the next sequential ID (05)', patient.serial === '05', patient.serial)
+  check('the MRN stays empty when none is typed', patient.regNo === null, String(patient.regNo))
+
+  const withMrn = await db.savePatient({ name: 'Has Hospital Number', age: '60', sex: 'Male', regNo: 'C145263' })
+  check('a typed MRN is stored as given', withMrn.regNo === 'C145263', withMrn.regNo)
+  check('the serial is still its own number', withMrn.serial === '06', withMrn.serial)
+  const blanked = await db.savePatient({ name: 'Second Without Number', age: '41', sex: 'Female' })
+  check('a second patient with no MRN does not collide on the unique column', blanked.regNo === null, String(blanked.regNo))
+  await db.deletePatient(withMrn.id)
+  await db.deletePatient(blanked.id)
 
   const updated = await db.savePatient({ ...patient, phone: '01999-111111' })
   check('patient update preserves the id', updated.id === patient.id)

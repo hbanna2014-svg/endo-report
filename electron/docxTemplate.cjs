@@ -367,7 +367,7 @@ async function renderDocxTemplate(base64, model, opts = {}) {
     PATIENT_AGE: model.patientLine.age ? `${model.patientLine.age}` : '',
     PATIENT_SEX: model.patientLine.sex || '',
     PATIENT_AGE_SEX: model.patientLine.ageSex,
-    REG_NO: model.patientLine.regNo || '',
+    REG_NO: model.patientLine.serial || model.patientLine.regNo || '',
     REPORT_NO: model.reportNo,
     PROCEDURE: model.short || '',
     PROCEDURE_DATE: model.patientLine.procedureDate || '',

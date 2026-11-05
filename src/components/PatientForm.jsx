@@ -127,7 +127,7 @@ export default function PatientForm({ open, patient, doctors = [], onClose, onSa
     if (!open) return
     if (patient) {
       setForm({ ...EMPTY_PATIENT, ...patient })
-      setSuggestedReg(patient.regNo || '')
+      setSuggestedReg(patient.serial || patient.regNo || '')
       setMore(false)
       setDual(false)
       setDualNames(['ENDOSCOPY', 'COLONOSCOPY'])
@@ -180,7 +180,9 @@ export default function PatientForm({ open, patient, doctors = [], onClose, onSa
       toast.push({ tone: 'warn', title: 'Give the two tests different names' })
       return null
     }
-    return api.patients.save({ ...form, regNo: form.regNo || suggestedReg })
+    // regNo is left exactly as typed: the patient number is allocated by the
+    // database, so sending the previewed number here would skip one.
+    return api.patients.save({ ...form })
   }
 
   const procedureChoices = [
@@ -219,8 +221,8 @@ export default function PatientForm({ open, patient, doctors = [], onClose, onSa
             ? 'Patient updated'
             : 'Patient registered',
         body: saved.matchedExisting
-          ? `${saved.name} · ${saved.regNo} was already on file; that record was opened instead.`
-          : `${saved.name} · ${saved.regNo}`,
+          ? `${saved.name} · ID ${saved.serial || saved.regNo} was already on file; that record was opened instead.`
+          : `${saved.name} · Patient ID ${saved.serial || saved.regNo}`,
       })
       onSaved?.(saved)
       // With "both" selected the two report ids are created immediately, even
@@ -328,11 +330,24 @@ export default function PatientForm({ open, patient, doctors = [], onClose, onSa
           </div>
         </Row>
 
+        {/* The patient ID is issued by the database, in order, and never reused.
+            It is shown here so the clerk can read it out, but it is not typed. */}
         <div className="np-row np-pair">
-          <div className="np-label">MRN</div>
-          <Input value={form.regNo} onChange={set('regNo')} placeholder={suggestedReg} />
+          <div className="np-label">Serial No</div>
+          <Input
+            className="mono"
+            value={patient?.serial || suggestedReg || '…'}
+            readOnly
+            disabled
+            title="Assigned automatically in arrival order — never reused, never renumbered"
+          />
           <div className="np-label">Bed</div>
           <Select value={bed} onChange={(e) => setBed(e.target.value)} options={BEDS} />
+        </div>
+
+        <div className="np-row">
+          <div className="np-label">MRN</div>
+          <Input value={form.regNo} onChange={set('regNo')} placeholder="Optional hospital number" />
         </div>
 
         <Row label="Procedure">

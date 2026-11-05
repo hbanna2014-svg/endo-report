@@ -203,7 +203,8 @@ export function buildPrintHtml(model) {
           <table class="meta">
             <tr><td class="k">Patient name</td><td>${esc(model.patientLine.name)}</td></tr>
             <tr><td class="k">Age / Sex</td><td>${esc(model.patientLine.ageSex)}</td></tr>
-            ${model.patientLine.regNo ? `<tr><td class="k">Registration no</td><td>${esc(model.patientLine.regNo)}</td></tr>` : ''}
+            ${model.patientLine.serial ? `<tr><td class="k">Patient ID</td><td>${esc(model.patientLine.serial)}</td></tr>` : ''}
+            ${model.patientLine.regNo && model.patientLine.regNo !== model.patientLine.serial ? `<tr><td class="k">MRN</td><td>${esc(model.patientLine.regNo)}</td></tr>` : ''}
             ${model.patientLine.phone ? `<tr><td class="k">Contact</td><td>${esc(model.patientLine.phone)}</td></tr>` : ''}
             ${model.patientLine.address ? `<tr><td class="k">Address</td><td>${esc(model.patientLine.address)}</td></tr>` : ''}
             ${model.patientLine.referredBy ? `<tr><td class="k">Referred by</td><td>${esc(model.patientLine.referredBy)}</td></tr>` : ''}

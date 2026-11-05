@@ -205,7 +205,10 @@ Capture button in the top bar still works while you are typing a finding.
    endoscopist signature. These appear on every report.
 2. **Settings ▸ Doctors** — add your endoscopists and referring physicians.
 3. **Patients ▸ New patient** — register the patient (name, age, sex, referring doctor,
-   indication, history). The registration number is generated automatically.
+   indication, history). The **Patient ID** (01, 02, 03 …) is issued automatically in
+   arrival order, cannot be typed over, and is never reused — deleting a patient leaves a
+   gap rather than renumbering the rest. The **MRN** field is optional and holds the
+   hospital's own number; it is printed beside the Patient ID when it differs.
 4. **New report** — choose *Upper GI Endoscopy*, *Colonoscopy* or *Both*, and the date.
 5. In the workspace:
    - **Findings** tab — walk the sections down the left; tick a finding and fill in its values

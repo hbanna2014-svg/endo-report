@@ -243,6 +243,7 @@ export default function ProcedureList({ onOpenProcedure, onRefreshStats }) {
                 <thead>
                   <tr>
                     {selectMode ? <th style={{ width: 40 }} /> : null}
+                    <th style={{ width: 90 }}>Serial No</th>
                     <th>Patient</th>
                     <th>Procedure</th>
                     <th>Date</th>
@@ -259,10 +260,19 @@ export default function ProcedureList({ onOpenProcedure, onRefreshStats }) {
                           <span className={`checkbox ${checked.includes(r.id) ? 'on' : ''}`} />
                         </td>
                       ) : null}
+                      <td className="mono" onClick={() => onOpenProcedure(r.id, r.patientId)}>
+                        <span className="serial-no">{r.patientSerial || '—'}</span>
+                      </td>
                       <td onClick={() => onOpenProcedure(r.id, r.patientId)}>
                         <div className="name">{r.patientName}</div>
                         <div className="sub">
-                          {[r.patientAge && `${r.patientAge} y`, r.patientSex, r.patientReg].filter(Boolean).join(' · ')}
+                          {[
+                            r.patientAge && `${r.patientAge} y`,
+                            r.patientSex,
+                            r.patientReg && `MRN ${r.patientReg}`,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
                         </div>
                       </td>
                       <td onClick={() => onOpenProcedure(r.id, r.patientId)}>

@@ -324,7 +324,7 @@ export default function PatientList({ doctors, onOpenProcedure, onGoToWorkspace,
                     <tr>
                       <th style={{ width: 56 }} />
                       <th>Patient</th>
-                      <th>Registration</th>
+                      <th>Serial No</th>
                       <th>Age / Sex</th>
                       <th>Contact</th>
                       <th>Referred by</th>
@@ -340,9 +340,17 @@ export default function PatientList({ doctors, onOpenProcedure, onGoToWorkspace,
                         </td>
                         <td>
                           <div className="name">{r.name}</div>
-                          <div className="sub">{r.indication ? <span className="two-line">{r.indication}</span> : '—'}</div>
+                          <div className="sub">
+                            {r.regNo ? `MRN ${r.regNo}` : r.indication ? (
+                              <span className="two-line">{r.indication}</span>
+                            ) : '—'}
+                          </div>
                         </td>
-                        <td className="small mono">{r.regNo || '—'}</td>
+                        <td>
+                          <span className="chip brand mono" title="Sequential patient ID — never reused">
+                            {r.serial || '—'}
+                          </span>
+                        </td>
                         <td className="small">{[r.age && `${r.age} ${r.ageUnit || 'y'}`, r.sex].filter(Boolean).join(' / ') || '—'}</td>
                         <td className="small">{r.phone || '—'}</td>
                         <td className="small">{r.referredBy || '—'}</td>
@@ -415,7 +423,7 @@ export default function PatientList({ doctors, onOpenProcedure, onGoToWorkspace,
           <div className="grid c2" style={{ marginTop: 16 }}>
             <Card
               title={selected.name}
-              subtitle={`${selected.regNo || ''} · ${[selected.age && `${selected.age} ${selected.ageUnit}`, selected.sex].filter(Boolean).join(' / ')}`}
+              subtitle={`${selected.serial ? `Patient ID ${selected.serial}` : ''}${selected.regNo ? ` · MRN ${selected.regNo}` : ''} · ${[selected.age && `${selected.age} ${selected.ageUnit}`, selected.sex].filter(Boolean).join(' / ')}`}
               actions={
                 <Button
                   size="sm"

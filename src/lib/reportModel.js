@@ -195,7 +195,7 @@ export function buildHospitalForm(model) {
 
   const identityNo = String(procedure.identityNo || patient.identityNo || '').trim()
   const visitId = String(procedure.visitId || patient.visitId || '').trim()
-  const identity = [identityNo || patient.regNo || '', visitId].filter(Boolean).join('   ')
+  const identity = [identityNo || patient.serial || patient.regNo || '', visitId].filter(Boolean).join('   ')
 
   const ageSex = [patient.age, patient.sex].filter(Boolean).join(' / ')
   const history = String(patient.history || procedure.history || '').trim()
@@ -377,7 +377,7 @@ export function buildReportDoc(procedure, patient, model) {
     PATIENT_NAME: patient?.name,
     AGE: patient?.age,
     SEX: patient?.sex,
-    REG_NO: patient?.regNo,
+    REG_NO: patient?.serial || patient?.regNo,
     REFERRED_BY: procedure?.referredBy,
     PERFORMED_BY: procedure?.performingDoctor || patient?.performingDoctor,
     DATE: procedure?.procedureDate,
@@ -577,6 +577,9 @@ export function buildReportModel(patient, procedure, templateInput, options = {}
     patientLine: {
       name: patient.name || '',
       ageSex: ageSex(patient),
+      // The sequential ID is the patient's number on the report. The MRN is the
+      // hospital's own number and is printed beside it when it differs.
+      serial: patient.serial || patient.serialNo || '',
       regNo: patient.regNo || '',
       sex: patient.sex || '',
       age: patient.age || '',
@@ -623,7 +626,10 @@ export function renderPlainText(model) {
   L.push('')
   L.push(`Patient        : ${model.patientLine.name}`)
   L.push(`Age / Sex      : ${model.patientLine.ageSex}`)
-  if (model.patientLine.regNo) L.push(`Registration no: ${model.patientLine.regNo}`)
+  if (model.patientLine.serial) L.push(`Patient ID     : ${model.patientLine.serial}`)
+  if (model.patientLine.regNo && model.patientLine.regNo !== model.patientLine.serial) {
+    L.push(`MRN            : ${model.patientLine.regNo}`)
+  }
   if (model.patientLine.referredBy) L.push(`Referred by    : ${model.patientLine.referredBy}`)
   L.push(`Performed by   : ${model.patientLine.performedBy}`)
   L.push(`Date           : ${model.patientLine.procedureDate}`)

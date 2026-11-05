@@ -4,6 +4,52 @@ All notable changes to EndoReport. Versions follow [semantic versioning](https:/
 
 ---
 
+## 0.5.16 — 2026-11-05
+
+### Added
+
+- **Every patient gets a sequential ID: 01, 02, 03 …** The number is issued when
+  the patient is registered, in arrival order, and is shown in the patient list,
+  on the registration form (read-only, so it cannot be typed over), in the
+  workspace header and on the printed / Word report.
+
+  The number comes from a counter stored in the database, **not** from
+  `COUNT(*)`. That distinction is the whole point: counting the rows means that
+  deleting patient 03 hands the number 03 to the next arrival, and every paper
+  report already filed under 03 now points at a different person. The counter
+  only ever moves forward, so deleting a patient in the middle leaves a gap —
+  exactly as a hospital register should — and nobody is ever renumbered.
+
+  Numbers are two digits (`01` … `09`) until the hundredth patient and then grow
+  naturally (`100`, `101`), so nothing has to be re-padded later.
+
+  Existing records are numbered once, in the order they were entered
+  (`created_at`), so the first patient ever registered becomes 01. The migration
+  is idempotent and runs inside a transaction; the database is copied before it
+  runs, as with every schema change.
+
+- **A dedicated *Serial No* column.** The archive and the patient register now show
+  the serial in its own column instead of hiding it under the patient's name, so the
+  number is scannable down the page.
+
+- **MRN is back under the patient's name.** The clinic's own hospital number is shown
+  as `MRN …` beneath the patient name, exactly where it used to sit, and it is still
+  stored, searchable and printed on the report. It is no longer copied from the serial:
+  a patient with no MRN simply shows none, and the two identifiers stay distinct.
+
+- **The register now reads newest-first.** The patient entered last sits at the top
+  of the list and 01 moves down to the bottom, so the on-screen order always matches
+  the serial order. Editing an older record no longer pulls it to the top, which is
+  what the previous `updated_at` ordering did.
+
+- Patient search now accepts the ID (`01`, `1`, `001` all find the same record).
+
+### Database
+
+- Schema v6: `patients.serial_no` (unique index) and the `counters` table.
+
+---
+
 ## 0.5.15 — 2026-11-04
 
 ### Added

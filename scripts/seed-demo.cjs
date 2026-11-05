@@ -126,6 +126,7 @@ async function run() {
   const P = [
     {
       name: 'Abdul Karim',
+      regNo: 'C1235',
       age: '58',
       ageUnit: 'years',
       sex: 'Male',
@@ -137,6 +138,7 @@ async function run() {
     },
     {
       name: 'Rahima Begum',
+      regNo: 'C12345',
       age: '42',
       ageUnit: 'years',
       sex: 'Female',
@@ -148,6 +150,7 @@ async function run() {
     },
     {
       name: 'Md. Jahangir Alam',
+      regNo: 'C145263',
       age: '66',
       ageUnit: 'years',
       sex: 'Male',

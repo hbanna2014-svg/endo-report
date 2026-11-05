@@ -443,7 +443,7 @@ export default function Dashboard({ stats, meta, clinic, onNavigate, onOpenProce
                         <td>
                           <div className="name">{p.patientName}</div>
                           <div className="sub">
-                            {[p.patientAge && `${p.patientAge} y`, p.patientSex, p.patientReg]
+                            {[p.patientAge && `${p.patientAge} y`, p.patientSex, p.patientSerial || p.patientReg]
                               .filter(Boolean)
                               .join(' · ')}
                           </div>

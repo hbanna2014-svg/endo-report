@@ -15,7 +15,7 @@ const crypto = require('node:crypto')
  * Bump this whenever the schema changes and add a matching entry to MIGRATIONS.
  * Existing clinics are upgraded in place; their data is never recreated.
  */
-const SCHEMA_VERSION = 5
+const SCHEMA_VERSION = 6
 
 /**
  * Ordered, idempotent schema migrations. Each entry moves a database from
@@ -66,6 +66,44 @@ const MIGRATIONS = [
       await db.exec(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS post_code TEXT`)
     },
   },
+  {
+    to: 6,
+    name: 'sequential patient ID (01, 02, 03 …) that is never reused',
+    up: async (db) => {
+      // The number lives in its own monotic counter, not in COUNT(*). Counting
+      // the rows would hand a deleted patient's number to the next arrival,
+      // which is exactly what a clinic record must never do.
+      await db.exec(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS serial_no INTEGER`)
+      await db.exec(
+        `CREATE TABLE IF NOT EXISTS counters (
+           key TEXT PRIMARY KEY,
+           value INTEGER NOT NULL DEFAULT 0
+         )`,
+      )
+
+      // Existing records are numbered in the order they were entered, so the
+      // first patient ever registered becomes 01.
+      await db.exec(
+        `UPDATE patients p
+            SET serial_no = o.rn
+           FROM (
+             SELECT p2.id,
+                    COALESCE((SELECT MAX(serial_no) FROM patients), 0)
+                      + ROW_NUMBER() OVER (ORDER BY p2.created_at ASC, p2.id ASC) AS rn
+               FROM patients p2
+              WHERE p2.serial_no IS NULL
+           ) o
+          WHERE p.id = o.id`,
+      )
+
+      await db.exec(
+        `INSERT INTO counters (key, value)
+         SELECT 'patient_serial', COALESCE(MAX(serial_no), 0) FROM patients
+         ON CONFLICT (key) DO UPDATE
+           SET value = GREATEST(counters.value, EXCLUDED.value)`,
+      )
+    },
+  },
 ]
 
 let PGliteCtor = null
@@ -90,6 +128,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 CREATE TABLE IF NOT EXISTS patients (
   id TEXT PRIMARY KEY,
   reg_no TEXT UNIQUE,
+  serial_no INTEGER,
   identity_no TEXT,
   visit_id TEXT,
   name TEXT NOT NULL,
@@ -169,6 +208,11 @@ CREATE TABLE IF NOT EXISTS settings (
   value JSONB NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS counters (
+  key TEXT PRIMARY KEY,
+  value INTEGER NOT NULL DEFAULT 0
+);
+
 `
 
 /**
@@ -183,6 +227,7 @@ CREATE INDEX IF NOT EXISTS idx_media_procedure ON media(procedure_id);
 CREATE INDEX IF NOT EXISTS idx_media_taken ON media(taken_at);
 CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(name);
 CREATE INDEX IF NOT EXISTS idx_patients_identity ON patients(identity_no);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_patients_serial ON patients(serial_no);
 `
 
 function newId() {
@@ -349,6 +394,8 @@ function rowToPatient(r) {
   return {
     id: r.id,
     regNo: r.reg_no,
+    serialNo: r.serial_no,
+    serial: formatSerial(r.serial_no),
     identityNo: r.identity_no,
     visitId: r.visit_id,
     name: r.name,
@@ -373,18 +420,56 @@ function rowToPatient(r) {
   }
 }
 
-async function nextRegNo() {
-  const year = new Date().getFullYear()
-  const rows = await q(
-    `SELECT COUNT(*)::int AS c FROM patients WHERE reg_no LIKE $1`,
-    [`ER${year}-%`],
+/**
+ * The patient number a clinic reads out loud: 01, 02 … 99, 100, 101. Two digits
+ * until the hundredth patient, then it simply grows — never padded to a width
+ * that would one day overflow.
+ */
+function formatSerial(n) {
+  const value = Number(n)
+  if (!Number.isFinite(value) || value <= 0) return ''
+  return value < 10 ? `0${value}` : String(value)
+}
+
+/** The number the next registration will receive. Never consumes it. */
+async function peekNextSerial() {
+  const rows = await q(`SELECT value FROM counters WHERE key = 'patient_serial'`)
+  return formatSerial((Number(rows[0]?.value) || 0) + 1)
+}
+
+/**
+ * Takes the next number and moves the counter forward in one statement.
+ *
+ * Deliberately monotonic: deleting a patient never decrements the counter and
+ * never renumbers anybody, so a number already written on a paper report can
+ * never point at a different person later.
+ */
+async function allocateSerial() {
+  const bumped = await q(
+    `UPDATE counters SET value = value + 1 WHERE key = 'patient_serial' RETURNING value`,
   )
-  const n = (rows[0]?.c || 0) + 1
-  return `ER${year}-${String(n).padStart(4, '0')}`
+  if (bumped.length) return Number(bumped[0].value)
+
+  // No counter row yet (a fresh database, or a restored folder that predates
+  // it). Start from the highest number already on a patient so that a missing
+  // counter can never hand out a number somebody already has.
+  const created = await q(
+    `INSERT INTO counters (key, value)
+     SELECT 'patient_serial', COALESCE(MAX(serial_no), 0) + 1 FROM patients
+     ON CONFLICT (key) DO UPDATE SET value = counters.value + 1
+     RETURNING value`,
+  )
+  return Number(created[0]?.value) || 1
+}
+
+/** Kept for the IPC contract: the UI asks for "the next number". */
+async function nextRegNo() {
+  return peekNextSerial()
 }
 
 const PATIENT_COLUMNS = [
   ['reg_no', 'regNo'],
+  ['serial_no', 'serialNo'],
   ['identity_no', 'identityNo'],
   ['visit_id', 'visitId'],
   ['name', 'name'],
@@ -448,25 +533,46 @@ async function findExistingPatient(input) {
 
 async function savePatient(input) {
   let id = input.id || newId()
-  let regNo = input.regNo && String(input.regNo).trim() ? String(input.regNo).trim() : await nextRegNo()
-  const existing = await q(`SELECT id FROM patients WHERE id = $1`, [id])
+  const typedRegNo = input.regNo && String(input.regNo).trim() ? String(input.regNo).trim() : ''
+  let regNo = typedRegNo
+  let serialNo = null
+
+  const existing = await q(`SELECT id, reg_no, serial_no FROM patients WHERE id = $1`, [id])
+
+  /** Every column in PATIENT_COLUMNS order, with the two identifiers resolved. */
+  const rowValues = (serial, mrn) =>
+    PATIENT_COLUMNS.map(([col, key]) => {
+      if (col === 'serial_no') return serial
+      // An empty MRN is stored as NULL, never as "": the column is UNIQUE and a
+      // second empty string would collide with the first one.
+      if (col === 'reg_no') return mrn || null
+      return input[key] ?? null
+    })
 
   /* A brand-new registration that matches somebody already on file is not a new
      patient — it is the same person being entered twice. Reuse the existing
      record and merge in only the values that were actually typed, so nothing
      already stored can be blanked out. */
-  let matchedExisting = false
   if (!input.id) {
     const match = await findExistingPatient(input)
     if (match) {
-      matchedExisting = true
       id = match.row.id
-      regNo = match.row.reg_no || regNo
+      // The number already on the paper file is the one that must be kept.
+      serialNo = match.row.serial_no || (await allocateSerial())
+      regNo = match.row.reg_no || typedRegNo || null
+
       const merged = {}
       for (const [col, key] of PATIENT_COLUMNS) {
-        merged[key] = input[key] !== undefined && input[key] !== null && String(input[key]).trim() !== ''
-          ? input[key]
-          : match.row[col]
+        if (col === 'serial_no') {
+          merged.serialNo = serialNo
+        } else if (col === 'reg_no') {
+          merged.regNo = regNo || null
+        } else {
+          merged[key] =
+            input[key] !== undefined && input[key] !== null && String(input[key]).trim() !== ''
+              ? input[key]
+              : match.row[col]
+        }
       }
       const sets = PATIENT_COLUMNS.map(([c], i) => `${c} = $${i + 2}`).join(', ')
       await q(`UPDATE patients SET ${sets}, updated_at = now() WHERE id = $1`, [
@@ -479,18 +585,27 @@ async function savePatient(input) {
   }
 
   if (existing.length) {
+    // Editing a record never changes its number.
+    serialNo = existing[0].serial_no || (await allocateSerial())
+    if (!regNo) regNo = existing[0].reg_no || null
+
     const sets = PATIENT_COLUMNS.map(([col], i) => `${col} = $${i + 2}`).join(', ')
-    await q(
-      `UPDATE patients SET ${sets}, updated_at = now() WHERE id = $1`,
-      [id, regNo, ...PATIENT_COLUMNS.slice(1).map(([, key]) => input[key] ?? null)],
-    )
+    await q(`UPDATE patients SET ${sets}, updated_at = now() WHERE id = $1`, [
+      id,
+      ...rowValues(serialNo, regNo),
+    ])
   } else {
+    serialNo = await allocateSerial()
+    // The MRN stays empty unless the clerk types one — the serial is its own
+    // column now, so copying it into the MRN would just print the same number
+    // twice on the register.
+
     const cols = PATIENT_COLUMNS.map(([c]) => c)
     const placeholders = cols.map((_, i) => `$${i + 2}`)
     await q(
       `INSERT INTO patients (id, ${cols.join(', ')})
        VALUES ($1, ${placeholders.join(', ')})`,
-      [id, regNo, ...PATIENT_COLUMNS.slice(1).map(([, key]) => input[key] ?? null)],
+      [id, ...rowValues(serialNo, regNo)],
     )
   }
   return getPatient(id)
@@ -510,7 +625,12 @@ async function listPatients(search = '', limit = 500) {
      FROM patients p
      WHERE p.name ILIKE $1 OR COALESCE(p.reg_no,'') ILIKE $1 OR COALESCE(p.phone,'') ILIKE $1
         OR COALESCE(p.referred_by,'') ILIKE $1
-     ORDER BY p.updated_at DESC
+        OR lpad(COALESCE(p.serial_no::text,''), 2, '0') ILIKE $1
+     -- Newest registration first: the patient entered last sits at the top of
+     -- the register and 01 sinks to the bottom. Editing an older record no
+     -- longer drags it to the top, so the list order always mirrors the serial
+     -- order the clinic reads out of the book.
+     ORDER BY p.serial_no DESC NULLS LAST, p.updated_at DESC
      LIMIT $2`,
     [term, limit],
   )
@@ -748,16 +868,26 @@ async function listProcedures({ patientId = null, search = '', testName = null, 
     params.push(to)
   }
   if (search) {
-    where.push(`(p.name ILIKE $${i} OR COALESCE(p.reg_no,'') ILIKE $${i})`)
+    where.push(
+      `(p.name ILIKE $${i} OR COALESCE(p.reg_no,'') ILIKE $${i}
+        OR lpad(COALESCE(p.serial_no::text,''), 2, '0') ILIKE $${i})`,
+    )
     params.push(`%${search}%`)
     i++
   }
   params.push(limit)
   const rows = await q(
-    `SELECT pr.*, p.name AS patient_name, p.reg_no AS patient_reg, p.age AS patient_age, p.sex AS patient_sex
+    `SELECT pr.*, p.name AS patient_name, p.reg_no AS patient_reg,
+            p.serial_no AS patient_serial, p.age AS patient_age, p.sex AS patient_sex
      FROM procedures pr JOIN patients p ON p.id = pr.patient_id
      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-     ORDER BY COALESCE(pr.procedure_date, pr.created_at::text) DESC
+     -- The archive follows the same rule as the register: the patient entered
+     -- last is at the top and 01 sinks to the bottom. Ordering by the procedure
+     -- date instead would bury a case that was entered late with an earlier
+     -- date, which is not the order the clinic thinks in.
+     ORDER BY p.serial_no DESC NULLS LAST,
+              COALESCE(pr.procedure_date, pr.created_at::text) DESC,
+              pr.created_at DESC
      LIMIT $${i}`,
     params,
   )
@@ -765,6 +895,7 @@ async function listProcedures({ patientId = null, search = '', testName = null, 
     ...rowToProcedure(r, false),
     patientName: r.patient_name,
     patientReg: r.patient_reg,
+    patientSerial: formatSerial(r.patient_serial),
     patientAge: r.patient_age,
     patientSex: r.patient_sex,
   }))
@@ -1095,6 +1226,9 @@ module.exports = {
   newId,
   getDataDir: () => dataDir,
   nextRegNo,
+  peekNextSerial,
+  allocateSerial,
+  formatSerial,
   savePatient,
   getPatient,
   listPatients,

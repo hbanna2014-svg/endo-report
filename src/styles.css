@@ -249,6 +249,16 @@ a { color: var(--brand); }
 .small { font-size: 12px; }
 .tiny { font-size: 11px; }
 .mono { font-family: var(--mono); }
+
+/* The patient's serial — a register number, so tabular figures keep the column
+   optically aligned from 01 through 100 and beyond. */
+.serial-no {
+  font-family: var(--mono);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
 .center { text-align: center; }
 .nowrap { white-space: nowrap; }
 .two-line { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

@@ -170,7 +170,12 @@ export default function ReportView({
                 )}
               </MetaRow>
               <MetaRow
-                label="Registration no"
+                label="Patient ID"
+                value={model.patientLine.serial}
+                editable={false}
+              />
+              <MetaRow
+                label="MRN"
                 value={model.patientLine.regNo}
                 editable={editable}
                 onChange={(v) => onField?.('patient', 'regNo', v)}

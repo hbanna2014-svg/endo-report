@@ -962,7 +962,9 @@ export default function Workspace({
         <div>
           <h2 style={{ fontSize: 15 }}>{patient?.name || 'Patient'}</h2>
           <div className="crumb">
-            {[patient?.regNo, patient?.age && `${patient.age} ${patient.ageUnit}`, patient?.sex].filter(Boolean).join(' · ')}
+            {[patient?.serial ? `ID ${patient.serial}` : patient?.regNo, patient?.age && `${patient.age} ${patient.ageUnit}`, patient?.sex]
+              .filter(Boolean)
+              .join(' · ')}
           </div>
         </div>
         <ProcedureChip testName={procedure.testName} />

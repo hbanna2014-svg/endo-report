@@ -272,7 +272,10 @@ function buildDocument(model) {
       ['Patient name', model.patientLine.name],
       ['Age / Sex', model.patientLine.ageSex],
     ]
-    if (model.patientLine.regNo) rows.push(['Registration no', model.patientLine.regNo])
+    if (model.patientLine.serial) rows.push(['Patient ID', model.patientLine.serial])
+    if (model.patientLine.regNo && model.patientLine.regNo !== model.patientLine.serial) {
+      rows.push(['MRN', model.patientLine.regNo])
+    }
     if (model.patientLine.phone) rows.push(['Contact', model.patientLine.phone])
     if (model.patientLine.address) rows.push(['Address', model.patientLine.address])
     if (model.patientLine.referredBy) rows.push(['Referred by', model.patientLine.referredBy])
